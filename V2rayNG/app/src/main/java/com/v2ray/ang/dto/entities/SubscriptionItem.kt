@@ -13,5 +13,16 @@ data class SubscriptionItem(
     var filter: String? = null,
     var allowInsecureUrl: Boolean = false,
     var userAgent: String? = null,
+    // What the last fetch's headers said (EthaSubscription.applyHeaders). -1 = the header was
+    // absent; total 0 = unlimited data, expire 0 = no expiry (the server's meaning, kept as is).
+    var upload: Long = -1,
+    var download: Long = -1,
+    var total: Long = -1,
+    var expire: Long = -1,
+    var profileTitle: String? = null,
+    var announce: String? = null,
+    var supportUrl: String? = null,
+    var webPageUrl: String? = null,
+    var infoUpdated: Long = -1,
 )
 

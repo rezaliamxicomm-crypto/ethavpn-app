@@ -8,6 +8,7 @@ import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreConfigManager
 import com.v2ray.ang.dto.SubscriptionUpdateResult
 import com.v2ray.ang.dto.UrlContentRequest
+import com.v2ray.ang.dto.UrlContentResponse
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.dto.entities.SubscriptionCache
 import com.v2ray.ang.dto.entities.SubscriptionItem
@@ -553,9 +554,9 @@ object AngConfigManager {
             val proxyUsername = SettingsManager.getSocksUsername()
             val proxyPassword = SettingsManager.getSocksPassword()
 
-            var configText = try {
+            var response = try {
                 val httpPort = SettingsManager.getHttpPort()
-                HttpUtil.getUrlContentWithUserAgent(
+                HttpUtil.getUrlContentWithHeaders(
                     UrlContentRequest(
                         url = url,
                         userAgent = userAgent,
@@ -567,11 +568,11 @@ object AngConfigManager {
                 )
             } catch (e: Exception) {
                 LogUtil.e(AppConfig.ANG_PACKAGE, "Update subscription: proxy not ready or other error", e)
-                ""
+                UrlContentResponse("")
             }
-            if (configText.isEmpty()) {
-                configText = try {
-                    HttpUtil.getUrlContentWithUserAgent(
+            if (response.body.isEmpty()) {
+                response = try {
+                    HttpUtil.getUrlContentWithHeaders(
                         UrlContentRequest(
                             url = url,
                             userAgent = userAgent
@@ -579,9 +580,10 @@ object AngConfigManager {
                     )
                 } catch (e: Exception) {
                     LogUtil.e(AppConfig.TAG, "Update subscription: Failed to get URL content with user agent", e)
-                    ""
+                    UrlContentResponse("")
                 }
             }
+            val configText = response.body
             if (configText.isEmpty()) {
                 return SubscriptionUpdateResult(failureCount = 1)
             }
@@ -589,6 +591,9 @@ object AngConfigManager {
             val count = parseConfigViaSub(configText, it.guid, false)
             if (count > 0) {
                 it.subscription.lastUpdated = System.currentTimeMillis()
+                // The account card: days and data left, a notice, the support link — from the
+                // response headers. A header that is missing or broken leaves the profile alone.
+                EthaSubscription.applyHeaders(it.subscription, response.headers)
                 MmkvManager.encodeSubscription(it.guid, it.subscription)
                 LogUtil.i(AppConfig.TAG, "Subscription updated: ${it.subscription.remarks}, $count configs")
                 return SubscriptionUpdateResult(
@@ -641,6 +646,12 @@ object AngConfigManager {
         val subItem = SubscriptionItem()
         subItem.remarks = uri.fragment ?: "import sub"
         subItem.url = url
+        if (EthaSubscription.isSubLink(url)) {
+            // Our own link: named after the service, refreshed on the API's schedule by itself.
+            if (uri.fragment.isNullOrBlank()) subItem.remarks = AppConfig.ETHA_SUB_NAME
+            subItem.autoUpdate = true
+            subItem.updateInterval = AppConfig.ETHA_SUB_UPDATE_MINUTES
+        }
         MmkvManager.encodeSubscription("", subItem)
         return 1
     }

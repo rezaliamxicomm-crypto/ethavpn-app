@@ -479,4 +479,39 @@
         <item>WebDAV</item>
     </string-array>
 
+    <!-- EthaVPN -->
+    <string name="etha_empty_title">Добавьте подписку</string>
+    <string name="etha_empty_hint">Нажмите на свою ссылку в Telegram (🔗 Моя ссылка в боте) или вставьте её здесь.</string>
+    <string name="etha_paste_link">Вставить ссылку</string>
+    <string name="etha_scan_qr">Сканировать QR-код</string>
+    <string name="etha_connect">Подключить</string>
+    <string name="etha_disconnect">Отключить</string>
+    <string name="etha_state_connected">Подключено</string>
+    <string name="etha_state_not_connected">Не подключено</string>
+    <string name="etha_state_connecting">Подключение…</string>
+    <string name="etha_state_finding">Поиск лучшего сервера…</string>
+    <string name="etha_line">Сервер: %s</string>
+    <string name="etha_days_left">Осталось дней: %d</string>
+    <string name="etha_no_expiry">Без срока</string>
+    <string name="etha_expired">Истекла. Продлите, чтобы продолжить.</string>
+    <string name="etha_data_used">Использовано %1$s из %2$s</string>
+    <string name="etha_data_unlimited">Безлимитный трафик</string>
+    <string name="etha_data_unknown">Трафик: неизвестно до обновления</string>
+    <string name="etha_refresh">Обновить</string>
+    <string name="etha_renew">Продлить</string>
+    <string name="etha_support">Поддержка</string>
+    <string name="etha_advanced">Дополнительно (серверы, настройки)</string>
+    <string name="etha_keep_line">Держать этот сервер</string>
+    <string name="etha_link_invalid">Это не ссылка EthaVPN</string>
+    <string name="etha_link_added">Подписка добавлена</string>
+    <string name="etha_no_line">Ни один сервер не ответил. Проверьте интернет и повторите.</string>
+    <string name="etha_switched">Переключено на %s</string>
+    <string name="etha_update_available">Доступна версия %s. Нажмите, чтобы обновить.</string>
+    <string name="etha_update_required">Эта версия устарела. Нажмите, чтобы обновить.</string>
+    <string name="etha_update_downloading">Загрузка обновления…</string>
+    <string name="etha_update_verify_failed">Загруженный файл не прошёл проверку. Попробуйте позже.</string>
+    <string name="etha_update_allow_install">Разрешите установку приложений из EthaVPN и снова нажмите Обновить.</string>
+    <string name="etha_update_download_failed">Загрузка не удалась. Сначала подключитесь, затем повторите.</string>
+    <string name="etha_about_upstream">На основе v2rayNG (GPL-3.0) и Xray-core</string>
+
 </resources>

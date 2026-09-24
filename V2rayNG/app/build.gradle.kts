@@ -9,12 +9,16 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.v2ray.ang"
+        // EthaVPN: its own id (both apps can be installed side by side); the code keeps the
+        // upstream namespace so the fork stays a small diff. subHost = the link's host, for
+        // the App Links filter in the manifest (https://<subHost>/sub/<token> opens the app).
+        applicationId = "com.ethavpn.app"
         minSdk = 24
         targetSdk = 37
-        versionCode = 736
-        versionName = "2.2.6"
+        versionCode = 100
+        versionName = "1.0.0"
         multiDexEnabled = true
+        manifestPlaceholders["subHost"] = "fra.mobileiphone.org"
 
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {
@@ -48,16 +52,12 @@ android {
         }
     }
 
+    // One distribution: the APK from the service's own download page (and the bot).
     flavorDimensions.add("distribution")
     productFlavors {
-        create("fdroid") {
+        create("direct") {
             dimension = "distribution"
-            applicationIdSuffix = ".fdroid"
-            buildConfigField("String", "DISTRIBUTION", "\"F-Droid\"")
-        }
-        create("playstore") {
-            dimension = "distribution"
-            buildConfigField("String", "DISTRIBUTION", "\"Play Store\"")
+            buildConfigField("String", "DISTRIBUTION", "\"Direct\"")
         }
     }
 
@@ -81,46 +81,15 @@ android {
 
     applicationVariants.all {
         val variant = this
-        val isFdroid = variant.productFlavors.any { it.name == "fdroid" }
-        if (isFdroid) {
-            val versionCodes =
-                mapOf(
-                    "armeabi-v7a" to 2, "arm64-v8a" to 1, "x86" to 4, "x86_64" to 3, "universal" to 0
-                )
-
-            variant.outputs
-                .map { it as com.android.build.gradle.internal.api.ApkVariantOutputImpl }
-                .forEach { output ->
-                    val abi = output.getFilter("ABI") ?: "universal"
-                    output.outputFileName = "v2rayNG_${variant.versionName}-fdroid_${abi}.apk"
-                    if (versionCodes.containsKey(abi)) {
-                        output.versionCodeOverride =
-                            (100 * variant.versionCode + versionCodes[abi]!!).plus(5000000)
-                    } else {
-                        return@forEach
-                    }
-                }
-        } else {
-            val versionCodes =
-                mapOf("armeabi-v7a" to 4, "arm64-v8a" to 4, "x86" to 4, "x86_64" to 4, "universal" to 4)
-
-            variant.outputs
-                .map { it as com.android.build.gradle.internal.api.ApkVariantOutputImpl }
-                .forEach { output ->
-                    val abi = if (output.getFilter("ABI") != null)
-                        output.getFilter("ABI")
-                    else
-                        "universal"
-
-                    output.outputFileName = "v2rayNG_${variant.versionName}_${abi}.apk"
-                    if (versionCodes.containsKey(abi)) {
-                        output.versionCodeOverride =
-                            (1000000 * versionCodes[abi]!!).plus(variant.versionCode)
-                    } else {
-                        return@forEach
-                    }
-                }
-        }
+        // Every ABI split carries the same versionCode (the updater compares versionName), and
+        // the file names are what latest.json and ethavpn-app-publish expect.
+        variant.outputs
+            .map { it as com.android.build.gradle.internal.api.ApkVariantOutputImpl }
+            .forEach { output ->
+                val abi = output.getFilter("ABI") ?: "universal"
+                output.outputFileName = "EthaVPN_${variant.versionName}_${abi}.apk"
+                output.versionCodeOverride = 4000000 + variant.versionCode
+            }
     }
 
     buildFeatures {

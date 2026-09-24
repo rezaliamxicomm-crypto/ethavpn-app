@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">v2rayNG</string>
+    <string name="app_name" translatable="false">EthaVPN</string>
     <string name="app_widget_name">Switch</string>
     <string name="app_tile_name">Switch</string>
     <string name="app_tile_first_use">First use of this feature, please use the app to add server</string>
@@ -481,5 +481,40 @@
         <item>Local</item>
         <item>WebDAV</item>
     </string-array>
+
+    <!-- EthaVPN -->
+    <string name="etha_empty_title">Add your subscription</string>
+    <string name="etha_empty_hint">Tap your link in Telegram (🔗 My Link in the bot), or paste it here.</string>
+    <string name="etha_paste_link">Paste link</string>
+    <string name="etha_scan_qr">Scan QR code</string>
+    <string name="etha_connect">Connect</string>
+    <string name="etha_disconnect">Disconnect</string>
+    <string name="etha_state_connected">Connected</string>
+    <string name="etha_state_not_connected">Not connected</string>
+    <string name="etha_state_connecting">Connecting…</string>
+    <string name="etha_state_finding">Finding the best server…</string>
+    <string name="etha_line">Server: %s</string>
+    <string name="etha_days_left">%d days left</string>
+    <string name="etha_no_expiry">No expiry</string>
+    <string name="etha_expired">Expired. Renew to keep connecting.</string>
+    <string name="etha_data_used">%1$s of %2$s used</string>
+    <string name="etha_data_unlimited">Unlimited data</string>
+    <string name="etha_data_unknown">Data: unknown until the next refresh</string>
+    <string name="etha_refresh">Refresh</string>
+    <string name="etha_renew">Renew</string>
+    <string name="etha_support">Support</string>
+    <string name="etha_advanced">Advanced (servers, settings)</string>
+    <string name="etha_keep_line">Keep this server</string>
+    <string name="etha_link_invalid">That is not an EthaVPN link</string>
+    <string name="etha_link_added">Subscription added</string>
+    <string name="etha_no_line">No server answered. Check your internet and try again.</string>
+    <string name="etha_switched">Switched to %s</string>
+    <string name="etha_update_available">Version %s is available. Tap to update.</string>
+    <string name="etha_update_required">This version is too old. Tap to update and keep connecting.</string>
+    <string name="etha_update_downloading">Downloading the update…</string>
+    <string name="etha_update_verify_failed">The downloaded file did not verify. Try again later.</string>
+    <string name="etha_update_allow_install">Allow installing apps from EthaVPN, then tap Update again.</string>
+    <string name="etha_update_download_failed">Download failed. Connect first, then try again.</string>
+    <string name="etha_about_upstream">Based on v2rayNG (GPL-3.0) and Xray-core</string>
 
 </resources>

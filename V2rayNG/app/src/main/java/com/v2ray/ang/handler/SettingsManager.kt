@@ -55,7 +55,8 @@ object SettingsManager {
     private fun initRoutingRulesets(context: Context) {
         val exist = MmkvManager.decodeRoutingRulesets()
         if (exist.isNullOrEmpty()) {
-            val rulesetList = getPresetRoutingRulesets(context)
+            // EthaVPN: Iranian sites and IPs go direct, everything else through the tunnel.
+            val rulesetList = getPresetRoutingRulesets(context, RoutingType.WHITE_IRAN.ordinal)
             MmkvManager.encodeRoutingRulesets(rulesetList)
         }
     }
@@ -535,6 +536,8 @@ object SettingsManager {
         ensureDefaultValue(AppConfig.PREF_FRAGMENT_LENGTH, "50-100")
         ensureDefaultValue(AppConfig.PREF_FRAGMENT_INTERVAL, "10-20")
         ensureDefaultValue(AppConfig.PREF_FRAGMENT_MAXSPLIT, "10")
+        // EthaVPN: the geo files that know Iran (geosite:category-ir, geoip:ir) for the routing preset.
+        ensureDefaultValue(AppConfig.PREF_GEO_FILES_SOURCES, AppConfig.GEO_FILES_SOURCES.last())
     }
 
     private fun ensureDefaultValue(key: String, default: String) {

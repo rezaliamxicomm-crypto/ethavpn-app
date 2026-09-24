@@ -1,87 +1,58 @@
 package com.v2ray.ang.ui
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import androidx.lifecycle.lifecycleScope
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
-import com.v2ray.ang.databinding.ActivityLogcatBinding
-import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
-import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.util.LogUtil
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.net.URLDecoder
 
+/**
+ * Entry point for a link: `ethavpn://install-sub?url=…&name=…` (the landing page),
+ * `ethavpn://install-config?url=…`, a verified App Link `https://<host>/sub/<token>` (tapped
+ * in Telegram), or text shared to the app. It only works out what the link is and hands it
+ * to [HomeActivity], which imports it with a progress bar and connects — an import started
+ * here would die with this activity.
+ */
 class UrlSchemeActivity : BaseActivity() {
-    private val binding by lazy { ActivityLogcatBinding.inflate(layoutInflater) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(binding.root)
-
+        var link: String? = null
         try {
-            intent.apply {
-                if (action == Intent.ACTION_SEND) {
-                    if ("text/plain" == type) {
-                        intent.getStringExtra(Intent.EXTRA_TEXT)?.let {
-                            parseUri(it, null)
-                        }
-                    }
-                } else if (action == Intent.ACTION_VIEW) {
-                    when (data?.host) {
-                        "install-config" -> {
-                            val uri: Uri? = intent.data
-                            val shareUrl = uri?.getQueryParameter("url").orEmpty()
-                            parseUri(shareUrl, uri?.fragment)
-                        }
+            when (intent.action) {
+                Intent.ACTION_SEND -> if ("text/plain" == intent.type) {
+                    link = intent.getStringExtra(Intent.EXTRA_TEXT)
+                }
 
-                        "install-sub" -> {
-                            val uri: Uri? = intent.data
-                            val shareUrl = uri?.getQueryParameter("url").orEmpty()
-                            parseUri(shareUrl, uri?.fragment)
+                Intent.ACTION_VIEW -> {
+                    val uri = intent.data
+                    link = when {
+                        uri == null -> null
+                        "https".equals(uri.scheme, ignoreCase = true) -> uri.toString()
+                        uri.host == "install-sub" || uri.host == "install-config" -> {
+                            val raw = uri.getQueryParameter("url").orEmpty()
+                            val decoded = try { URLDecoder.decode(raw, "UTF-8") } catch (_: Exception) { raw }
+                            val name = uri.fragment ?: uri.getQueryParameter("name")
+                            if (decoded.isNotEmpty() && !decoded.contains('#') && !name.isNullOrEmpty()) "$decoded#$name" else decoded
                         }
-
-                        else -> {
-                            toastError(R.string.toast_failure)
-                        }
+                        else -> null
                     }
                 }
             }
-
-            startActivity(Intent(this, MainActivity::class.java))
-            finish()
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "Error processing URL scheme", e)
         }
-    }
-
-    private fun parseUri(uriString: String?, fragment: String?) {
-        if (uriString.isNullOrEmpty()) {
-            return
+        if (link.isNullOrEmpty()) {
+            toastError(R.string.toast_failure)
+        } else {
+            LogUtil.i(AppConfig.TAG, "Link received")
         }
-        LogUtil.i(AppConfig.TAG, uriString)
-
-        var decodedUrl = URLDecoder.decode(uriString, "UTF-8")
-        val uri = Uri.parse(decodedUrl)
-        if (uri != null) {
-            if (uri.fragment.isNullOrEmpty() && !fragment.isNullOrEmpty()) {
-                decodedUrl += "#${fragment}"
-            }
-            LogUtil.i(AppConfig.TAG, decodedUrl)
-            lifecycleScope.launch(Dispatchers.IO) {
-                val (count, countSub) = AngConfigManager.importBatchConfig(decodedUrl, "", false)
-                withContext(Dispatchers.Main) {
-                    if (count + countSub > 0) {
-                        toast(R.string.import_subscription_success)
-                    } else {
-                        toast(R.string.import_subscription_failure)
-                    }
-                }
-            }
-        }
+        startActivity(Intent(this, HomeActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            if (!link.isNullOrEmpty()) putExtra(HomeActivity.EXTRA_LINK, link)
+        })
+        finish()
     }
 }

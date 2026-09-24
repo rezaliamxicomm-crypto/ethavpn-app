@@ -1,5 +1,8 @@
 name: Build APK
 
+# Every push to main builds and runs the unit tests. A manual run with release_tag = vX.Y.Z
+# also signs the APKs and latest.json with the release GPG key and publishes them as a GitHub
+# release, which ethavpn-app-publish on the server then verifies and serves from /dl/.
 on:
   workflow_dispatch:
     inputs:
@@ -8,7 +11,7 @@ on:
         type: string
   push:
     branches:
-      - master
+      - main
 
 permissions:
   contents: write
@@ -52,7 +55,7 @@ jobs:
       if: steps.cache-libhevtun-restore.outputs.cache-hit != 'true'
       run: |
         bash compile-hevtun.sh
-    
+
     - name: Save libhevtun
       if: steps.cache-libhevtun-restore.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6
@@ -93,34 +96,52 @@ jobs:
         fileName: "android_keystore.jks"
         encodedString: ${{ secrets.APP_KEYSTORE_BASE64 }}
 
-    - name: Build APK
+    - name: Unit tests
       run: |
         cd ${{ github.workspace }}/V2rayNG
         echo "sdk.dir=${ANDROID_HOME}" > local.properties
         chmod 755 gradlew
-        ./gradlew licenseFdroidReleaseReport
+        ./gradlew testDirectReleaseUnitTest
+
+    - name: Build APK
+      run: |
+        cd ${{ github.workspace }}/V2rayNG
+        ./gradlew licenseDirectReleaseReport
         ./gradlew assembleRelease -Pandroid.injected.signing.store.file=${{ steps.android_keystore.outputs.filePath }} -Pandroid.injected.signing.store.password=${{ secrets.APP_KEYSTORE_PASSWORD }} -Pandroid.injected.signing.key.alias=${{ secrets.APP_KEYSTORE_ALIAS }} -Pandroid.injected.signing.key.password=${{ secrets.APP_KEY_PASSWORD }}
-    
-    - name: Upload arm64-v8a APK
-      uses: actions/upload-artifact@v7
-      if: ${{  success() }}
-      with:
-        name: arm64-v8a
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/release/*arm64-v8a*.apk
 
-    - name: Upload armeabi-v7a APK
-      uses: actions/upload-artifact@v7
-      if: ${{  success() }}
-      with:
-        name: armeabi-v7a
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/release/*armeabi-v7a*.apk
+    - name: Write latest.json and the signing certificate fingerprint
+      run: |
+        set -euo pipefail
+        OUT=${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release
+        cd "$OUT"
+        VERSION=$(grep -oP 'versionName = "\K[^"]+' ${{ github.workspace }}/V2rayNG/app/build.gradle.kts)
+        CODE=$(grep -oP 'versionCode = \K[0-9]+' ${{ github.workspace }}/V2rayNG/app/build.gradle.kts)
+        MIN=$(tr -d ' \n' < ${{ github.workspace }}/min_supported.txt 2>/dev/null || echo "$VERSION")
+        NOTES=$( (cat ${{ github.workspace }}/RELEASE_NOTES.md 2>/dev/null || true) | head -c 1500 | jq -Rs .)
+        ASSETS=$(for f in EthaVPN_*.apk; do
+          abi=$(echo "$f" | sed -E 's/.*_([^_]+)\.apk$/\1/')
+          printf '{"abi":"%s","name":"%s","size":%s,"sha256":"%s"}\n' "$abi" "$f" "$(stat -c %s "$f")" "$(sha256sum "$f" | cut -d' ' -f1)"
+        done | jq -s .)
+        jq -n --arg v "$VERSION" --argjson c "$CODE" --arg p "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg m "$MIN" --argjson n "$NOTES" --argjson a "$ASSETS" \
+          '{version:$v, versionCode:$c, published:$p, min_supported:$m, notes:$n, assets:$a}' > latest.json
+        cat latest.json
+        # the release certificate's SHA-256: goes into assetlinks.json on the server (App Links)
+        $ANDROID_HOME/build-tools/37.0.0/apksigner verify --print-certs EthaVPN_${VERSION}_arm64-v8a.apk \
+          | grep -i 'SHA-256' | head -1 | sed -E 's/.*: *//' | tr 'a-f' 'A-F' | sed -E 's/(..)/\1:/g; s/:$//' > signing-cert-sha256.txt
+        echo "signing cert sha256: $(cat signing-cert-sha256.txt)"
+        echo "### EthaVPN $VERSION" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY; cat latest.json >> $GITHUB_STEP_SUMMARY; echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "Signing certificate SHA-256: \`$(cat signing-cert-sha256.txt)\`" >> $GITHUB_STEP_SUMMARY
 
-    - name: Upload x86 APK
+    - name: Upload APKs and metadata
       uses: actions/upload-artifact@v7
-      if: ${{  success() }}
+      if: ${{ success() }}
       with:
-        name: x86-apk
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/release/*x86*.apk
+        name: release-files
+        path: |
+          ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/EthaVPN_*.apk
+          ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/latest.json
+          ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/signing-cert-sha256.txt
 
   sign-and-release:
     needs: build
@@ -128,28 +149,31 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
 
     steps:
-      - name: Download APK artifacts
+      - name: Download build outputs
         uses: actions/download-artifact@v8
         with:
+          name: release-files
           path: release
 
-      - name: Sign APK files
+      - name: Sign APKs and latest.json
         run: |
+          set -euo pipefail
           printf '%s' "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
           KEY=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
           mkdir -p release-files
-
-          find release -type f -name '*.apk' | while read apk; do
-            cp "$apk" release-files/
-            gpg --batch --yes --local-user "$KEY" --detach-sign --output "release-files/$(basename "$apk").sig" "$apk"
+          for f in release/EthaVPN_*.apk release/latest.json; do
+            cp "$f" release-files/
+            gpg --batch --yes --local-user "$KEY" --detach-sign --output "release-files/$(basename "$f").sig" "$f"
           done
+          cp release/signing-cert-sha256.txt release-files/
+          gpg --armor --export "$KEY" > release-files/ethavpn-release-key.asc
+          echo "release key fingerprint: $KEY" | tee release-files/release-key-fingerprint.txt
+          ls -la release-files
 
-          gpg --armor --export "$KEY" > release-files/v2rayN-public-key.asc
-
-      - name: Upload APKs, signatures and public key to release
+      - name: Upload to the GitHub release
         uses: svenstaro/upload-release-action@v2
         with:
           file: release-files/*
           tag: ${{ inputs.release_tag }}
           file_glob: true
-          prerelease: true
+          prerelease: false

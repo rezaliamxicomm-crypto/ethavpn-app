@@ -42,6 +42,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isRunning by lazy { MutableLiveData<Boolean>() }
     val updateListAction by lazy { MutableLiveData<Int>() }
     val updateTestResultAction by lazy { MutableLiveData<String>() }
+    /** The moment a "real delay all" batch finished (Home connects with the best line then). */
+    val testsFinished by lazy { MutableLiveData<Long>() }
 
     /**
      * Refer to the official documentation for [registerReceiver](https://developer.android.com/reference/androidx/core/content/ContextCompat#registerReceiver(android.content.Context,android.content.BroadcastReceiver,android.content.IntentFilter,int):
@@ -468,6 +470,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val content = intent.getStringExtra("content")
                     if (content == "0") {
                         onTestsFinished()
+                        testsFinished.value = System.currentTimeMillis()
                     }
                 }
             }

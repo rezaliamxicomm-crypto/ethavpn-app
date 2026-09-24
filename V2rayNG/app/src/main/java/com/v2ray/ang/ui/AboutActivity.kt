@@ -46,7 +46,7 @@ class AboutActivity : BaseActivity() {
             binding.tvVersion.text = it
         }
         BuildConfig.APPLICATION_ID.also {
-            binding.tvAppId.text = it
+            binding.tvAppId.text = "${it}\n" + getString(R.string.etha_about_upstream)
         }
     }
 }

@@ -14,6 +14,9 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.contracts.ServiceControl
 import com.v2ray.ang.dto.OutboundTrafficStat
+import com.v2ray.ang.dto.RealPingEvent
+import com.v2ray.ang.handler.AutoSelect
+import com.v2ray.ang.service.RealPingWorkerService
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.extension.isComplexType
 import com.v2ray.ang.extension.toast
@@ -32,9 +35,15 @@ import com.v2ray.ang.service.IDialerService
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.util.Utils
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.ConcurrentHashMap
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.ProcessFinder
@@ -48,6 +57,13 @@ object CoreServiceManager {
     private var currentConfig: ProfileItem? = null
     private var processFinder: XrayProcessFinder? = null
     private var browserDialer: IDialerService? = null
+
+    // EthaVPN watchdog: while connected, a probe through the core every ETHA_WATCHDOG_INTERVAL_MS
+    // (sooner after a miss or a network change); ETHA_WATCHDOG_FAILURES misses in a row switch to
+    // the best other line of the same subscription and restart the core. Off for a pinned line.
+    private var watchdogJob: Job? = null
+    @Volatile private var watchdogFailures = 0
+    private val watchdogTried = ConcurrentHashMap.newKeySet<String>()
 
     var serviceControl: SoftReference<ServiceControl>? = null
         set(value) {
@@ -287,6 +303,97 @@ object CoreServiceManager {
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_SUCCESS, "")
         NotificationManager.startSpeedNotification()
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core started successfully")
+        startWatchdog(service, AppConfig.ETHA_WATCHDOG_INTERVAL_MS)
+    }
+
+    // ---------------------------------------------------------------- EthaVPN watchdog
+
+    private fun startWatchdog(service: Service, initialDelayMs: Long) {
+        stopWatchdog()
+        val current = MmkvManager.getSelectServer() ?: return
+        val subId = MmkvManager.decodeServerConfig(current)?.subscriptionId.orEmpty()
+        if (subId.isEmpty() || MmkvManager.decodeServerList(subId).size < 2) return
+        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_ETHA_PINNED, false)) return
+        watchdogJob = CoroutineScope(Dispatchers.IO).launch {
+            delay(initialDelayMs)
+            while (isActive && coreController.isRunning) {
+                if (probeTunnel()) {
+                    watchdogFailures = 0
+                    watchdogTried.clear()
+                } else {
+                    watchdogFailures++
+                    LogUtil.w(AppConfig.TAG, "Watchdog: probe failed ($watchdogFailures)")
+                }
+                if (watchdogFailures >= AppConfig.ETHA_WATCHDOG_FAILURES) {
+                    watchdogFailures = 0
+                    // A separate scope: stopping the core cancels this job, and the switch must outlive it.
+                    CoroutineScope(Dispatchers.IO).launch { switchLine(service, subId, current) }
+                    return@launch
+                }
+                delay(if (watchdogFailures > 0) 20_000L else AppConfig.ETHA_WATCHDOG_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun stopWatchdog() {
+        watchdogJob?.cancel()
+        watchdogJob = null
+    }
+
+    private fun probeTunnel(): Boolean {
+        return try {
+            coreController.measureDelay(SettingsManager.getDelayTestUrl()) >= 0
+        } catch (e: Exception) {
+            try { coreController.measureDelay(SettingsManager.getDelayTestUrl(true)) >= 0 } catch (_: Exception) { false }
+        }
+    }
+
+    /** Wi-Fi ↔ mobile: the tunnel may need a moment; probe again soon instead of waiting for the next tick. */
+    fun onNetworkChanged() {
+        if (watchdogJob == null || !coreController.isRunning) return
+        val service = getService() ?: return
+        watchdogFailures = 0
+        startWatchdog(service, 15_000L)
+    }
+
+    private suspend fun switchLine(service: Service, subId: String, failing: String) {
+        watchdogTried.add(failing)
+        val others = MmkvManager.decodeServerList(subId).filter { it !in watchdogTried }
+        if (others.isEmpty()) {
+            // every line failed once: forget the history and let the next round try them all again
+            watchdogTried.clear()
+            startWatchdog(service, AppConfig.ETHA_WATCHDOG_INTERVAL_MS)
+            return
+        }
+        val results = testLines(service, others)
+        val next = AutoSelect.best(others.mapIndexed { i, g -> AutoSelect.Candidate(g, results[g] ?: 0L, i) }) ?: others.first()
+        val name = MmkvManager.decodeServerConfig(next)?.remarks.orEmpty()
+        LogUtil.i(AppConfig.TAG, "Watchdog: switching to $name")
+        MmkvManager.setSelectServer(next)
+        AutoSelect.markTested()
+        MessageUtil.sendMsg2UI(service, AppConfig.MSG_MEASURE_DELAY_SUCCESS, service.getString(R.string.etha_switched, name))
+        val control = serviceControl?.get() ?: return
+        control.stopService()
+        delay(600)
+        startVService(control.getService())
+    }
+
+    /** Real-delay every given line through a throw-away core (the app's own sockets bypass the VPN). */
+    private suspend fun testLines(context: Context, guids: List<String>): Map<String, Long> {
+        val results = ConcurrentHashMap<String, Long>()
+        val done = CompletableDeferred<Unit>()
+        RealPingWorkerService(context, guids) { event ->
+            when (event) {
+                is RealPingEvent.Result -> {
+                    results[event.guid] = event.delayMillis
+                    MmkvManager.encodeServerTestDelayMillis(event.guid, event.delayMillis)
+                }
+                is RealPingEvent.Finish -> done.complete(Unit)
+                else -> {}
+            }
+        }.start()
+        withTimeoutOrNull(30_000L) { done.await() }
+        return results
     }
 
     /**
@@ -296,6 +403,7 @@ object CoreServiceManager {
      */
     fun stopCoreLoop(): Boolean {
         val service = getService() ?: return false
+        stopWatchdog()
 
         if (coreController.isRunning) {
             CoroutineScope(Dispatchers.IO).launch {

@@ -4,6 +4,7 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.AppConfig.LOOPBACK
 import com.v2ray.ang.BuildConfig
 import com.v2ray.ang.dto.UrlContentRequest
+import com.v2ray.ang.dto.UrlContentResponse
 import okhttp3.Credentials
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -144,6 +145,15 @@ object HttpUtil {
      */
     @Throws(IOException::class)
     fun getUrlContentWithUserAgent(request: UrlContentRequest): String {
+        return getUrlContentWithHeaders(request).body
+    }
+
+    /**
+     * Same as [getUrlContentWithUserAgent], but hands back the response headers too (names
+     * lower-cased): the subscription headers the account card is built from.
+     */
+    @Throws(IOException::class)
+    fun getUrlContentWithHeaders(request: UrlContentRequest): UrlContentResponse {
         var currentUrl = request.url
         var redirects = 0
         val maxRedirects = 3
@@ -152,7 +162,7 @@ object HttpUtil {
             if (currentUrl == null) continue
             val client = buildOkHttpClient(request.timeout, request.httpPort, request.proxyUsername, request.proxyPassword, followRedirects = false)
             val finalUserAgent = if (request.userAgent.isNullOrBlank()) {
-                "v2rayNG/${BuildConfig.VERSION_NAME}"
+                AppConfig.ETHA_USER_AGENT
             } else {
                 request.userAgent
             }
@@ -183,7 +193,11 @@ object HttpUtil {
                     }
 
                     response.isSuccessful -> {
-                        return response.body?.string() ?: ""
+                        val headers = LinkedHashMap<String, String>()
+                        for (i in 0 until response.headers.size) {
+                            headers[response.headers.name(i).lowercase()] = response.headers.value(i)
+                        }
+                        return UrlContentResponse(response.body?.string() ?: "", headers)
                     }
 
                     else -> {

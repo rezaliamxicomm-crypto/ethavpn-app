@@ -119,13 +119,33 @@ object AppConfig {
     const val GITHUB_RAW_URL = "https://raw.githubusercontent.com"
     const val GITHUB_DOWNLOAD_URL = "$GITHUB_URL/%s/releases/latest/download"
     const val ANDROID_PACKAGE_NAME_LIST_URL = "$GITHUB_RAW_URL/2dust/androidpackagenamelist/master/proxy.txt"
-    const val APP_URL = "$GITHUB_URL/2dust/v2rayNG"
-    const val APP_API_URL = "https://api.github.com/repos/2dust/v2rayNG/releases"
+    const val APP_URL = "$GITHUB_URL/rezaliamxicomm-crypto/ethavpn-app"
+    const val APP_API_URL = "https://api.github.com/repos/rezaliamxicomm-crypto/ethavpn-app/releases"
     const val APP_ISSUES_URL = "$APP_URL/issues"
-    const val APP_WIKI_MODE = "$APP_URL/wiki/Mode"
-    const val APP_PRIVACY_POLICY = "$GITHUB_RAW_URL/2dust/v2rayNG/master/CR.md"
-    const val APP_PROMOTION_URL = "aHR0cHM6Ly85LjIzNDQ1Ni54eXovYWJjLmh0bWw="
-    const val TG_CHANNEL_URL = "https://t.me/github_2dust"
+    const val APP_WIKI_MODE = "$GITHUB_URL/2dust/v2rayNG/wiki/Mode"
+    const val APP_PRIVACY_POLICY = "$GITHUB_RAW_URL/rezaliamxicomm-crypto/ethavpn-app/main/PRIVACY.md"
+    const val UPSTREAM_URL = "$GITHUB_URL/2dust/v2rayNG"
+    const val TG_CHANNEL_URL = "https://t.me/vpnandfree"
+
+    /** EthaVPN: the service this build is made for. */
+    const val ETHA_SUB_HOST = "fra.mobileiphone.org"
+    val ETHA_SUB_HOSTS = listOf(ETHA_SUB_HOST)
+    const val ETHA_SUB_PATH = "/sub/"
+    const val ETHA_SUB_NAME = "EthaVPN"
+    const val ETHA_USER_AGENT = "EthaVPN/${BuildConfig.VERSION_NAME} (android)"
+    const val ETHA_SUB_UPDATE_MINUTES = 720L                 // = the API's Profile-Update-Interval: 12 h
+    const val ETHA_DOWNLOAD_BASE = "https://$ETHA_SUB_HOST/dl/"
+    const val ETHA_LATEST_URL = "${ETHA_DOWNLOAD_BASE}latest.json"
+    const val ETHA_BOT_URL = "https://t.me/Ethaconfigbot"
+    const val ETHA_RENEW_URL = "$ETHA_BOT_URL?start=app_renew"
+    const val ETHA_SUPPORT_URL = "$ETHA_BOT_URL?start=app_support"
+    const val ETHA_WATCHDOG_INTERVAL_MS = 180_000L           // probe the tunnel every 3 minutes while connected
+    const val ETHA_WATCHDOG_FAILURES = 2                     // consecutive failed probes before switching lines
+    const val ETHA_DELAY_FRESH_MS = 600_000L                 // real-delay results younger than this are reused on Connect
+    const val ETHA_UPDATE_CHECK_MS = 86_400_000L             // ask /dl/latest.json at most once a day
+    const val PREF_ETHA_PINNED = "pref_etha_pinned"          // "keep this line": no auto-select, no auto-switch
+    const val PREF_ETHA_LAST_TEST = "pref_etha_last_test"
+    const val PREF_ETHA_LAST_UPDATE_CHECK = "pref_etha_last_update_check"
     const val DELAY_TEST_URL = "https://www.gstatic.com/generate_204"
     const val DELAY_TEST_URL2 = "https://www.google.com/generate_204"
 
@@ -134,7 +154,7 @@ object AppConfig {
 
     /** DNS server addresses. */
     const val DNS_PROXY = "1.1.1.1"
-    const val DNS_DIRECT = "223.5.5.5"
+    const val DNS_DIRECT = "178.22.122.100"                  // Shecan: reachable inside Iran, resolves the direct-routed .ir traffic
     const val DNS_VPN = "1.1.1.1"
     const val GEOSITE_PRIVATE = "geosite:private"
     const val GEOSITE_CN = "geosite:cn"
@@ -176,7 +196,7 @@ object AppConfig {
 
     /** Notification channel IDs and names. */
     const val RAY_NG_CHANNEL_ID = "RAY_NG_M_CH_ID"
-    const val RAY_NG_CHANNEL_NAME = "v2rayNG Background Service"
+    const val RAY_NG_CHANNEL_NAME = "EthaVPN Background Service"
 
     /** Protocols Scheme **/
     const val VMESS = "vmess://"
