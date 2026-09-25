@@ -59,7 +59,7 @@ class HomeActivity : HelperBaseActivity() {
     private var sub: SubscriptionCache? = null
     private var connecting = false        // waiting for the core to report started / stopped
     private var refreshingQuietly = false // a background subscription refresh is running
-    private var clipboardChecked = false  // the first-launch import from the clipboard runs once per process
+    private var clipboardTried: String? = null   // the link last taken from the clipboard (no second import of the same one)
     private var pendingConnect = false    // waiting for a real-delay batch to pick the line
     private var updateResult: CheckUpdateResult? = null
     private var rows: List<ServerPicker.Row> = emptyList()
@@ -163,19 +163,31 @@ class HomeActivity : HelperBaseActivity() {
     }
 
     /**
-     * First launch, no account yet: the landing page copies the customer's link to the clipboard
-     * when they tap "Download SkyRay", so the app can add the account by itself — no second tap on
-     * the link. Android hands the clipboard to the app only once its window has focus, hence here;
-     * once per process, only while there is no subscription, only for one of our links.
+     * No account yet: the landing page copies the customer's link to the clipboard before the
+     * download, so the app can add the account by itself — the card underneath only says "tap
+     * Paste link" for the phones that hand nothing over. Android gives the clipboard to the app
+     * only once its window has focus, hence here, on every focus gain while there is no
+     * subscription; a phone that answers the first read with nothing (the focus not yet
+     * registered, a vendor's clipboard prompt) gets a second read a moment later. One of our
+     * links is imported once, whatever the outcome.
      */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus || clipboardChecked || sub != null || connecting) return
-        clipboardChecked = true
+        if (!hasFocus) return
+        if (!importFromClipboard()) binding.root.postDelayed({ importFromClipboard() }, 400)
+    }
+
+    /** Returns true when the clipboard had text (a link or not) — false means nothing came back. */
+    private fun importFromClipboard(): Boolean {
+        if (sub != null || connecting || pendingConnect) return true
         val text = try { Utils.getClipboard(this) } catch (_: Exception) { "" }
-        val link = EthaSubscription.extractSubLink(text) ?: return
-        LogUtil.i(AppConfig.TAG, "First launch: a link on the clipboard, importing")
+        if (text.isBlank() || text == "null") return false
+        val link = EthaSubscription.extractSubLink(text) ?: return true
+        if (link == clipboardTried) return true
+        clipboardTried = link
+        LogUtil.i(AppConfig.TAG, "A link on the clipboard, importing")
         importLink(link)
+        return true
     }
 
     // ---------------------------------------------------------------- state
@@ -389,9 +401,10 @@ class HomeActivity : HelperBaseActivity() {
         val text = try { Utils.getClipboard(this) } catch (_: Exception) { "" }
         val link = EthaSubscription.extractSubLink(text)
         if (link == null) {
-            toastError(R.string.etha_link_invalid)
+            toastError(R.string.etha_clipboard_empty)   // the way back: the link in Telegram opens here
             return
         }
+        clipboardTried = link
         importLink(link)
     }
 

@@ -483,8 +483,9 @@
     </string-array>
 
     <!-- EthaVPN -->
-    <string name="etha_empty_title">Add your subscription</string>
-    <string name="etha_empty_hint">Tap your link in Telegram (🔗 My Link in the bot), or paste it here.</string>
+    <string name="etha_empty_title">Almost there</string>
+    <string name="etha_empty_hint">👇 Tap Paste link — that\'s all.</string>
+    <string name="etha_clipboard_empty">No link found. In Telegram, tap your link — it opens here.</string>
     <string name="etha_paste_link">Paste link</string>
     <string name="etha_scan_qr">Scan QR code</string>
     <string name="etha_connect">Connect</string>

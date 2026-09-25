@@ -459,8 +459,9 @@
     </string-array>
 
     <!-- EthaVPN -->
-    <string name="etha_empty_title">اشتراک خود را اضافه کنید</string>
-    <string name="etha_empty_hint">در تلگرام روی لینک خود بزنید (🔗 لینک من در ربات)، یا آن را اینجا بچسبانید.</string>
+    <string name="etha_empty_title">تقریباً تمام است</string>
+    <string name="etha_empty_hint">👇 روی «چسباندن لینک» بزنید؛ همین.</string>
+    <string name="etha_clipboard_empty">لینکی پیدا نشد. در تلگرام روی لینک خود بزنید؛ همین‌جا باز می‌شود.</string>
     <string name="etha_paste_link">چسباندن لینک</string>
     <string name="etha_scan_qr">اسکن کد QR</string>
     <string name="etha_connect">اتصال</string>

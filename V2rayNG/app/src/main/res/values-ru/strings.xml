@@ -480,8 +480,9 @@
     </string-array>
 
     <!-- EthaVPN -->
-    <string name="etha_empty_title">Добавьте подписку</string>
-    <string name="etha_empty_hint">Нажмите на свою ссылку в Telegram (🔗 Моя ссылка в боте) или вставьте её здесь.</string>
+    <string name="etha_empty_title">Почти готово</string>
+    <string name="etha_empty_hint">👇 Нажмите «Вставить ссылку» — и всё.</string>
+    <string name="etha_clipboard_empty">Ссылка не найдена. Нажмите на свою ссылку в Telegram — она откроется здесь.</string>
     <string name="etha_paste_link">Вставить ссылку</string>
     <string name="etha_scan_qr">Сканировать QR-код</string>
     <string name="etha_connect">Подключить</string>

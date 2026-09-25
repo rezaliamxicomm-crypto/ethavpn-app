@@ -43,7 +43,9 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_scan"
-                    style="@style/EthaOutlinedButton"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:text="@string/etha_scan_qr" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
