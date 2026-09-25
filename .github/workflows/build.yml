@@ -118,15 +118,15 @@ jobs:
         CODE=$(grep -oP 'versionCode = \K[0-9]+' ${{ github.workspace }}/V2rayNG/app/build.gradle.kts)
         MIN=$(tr -d ' \n' < ${{ github.workspace }}/min_supported.txt 2>/dev/null || echo "$VERSION")
         NOTES=$( (cat ${{ github.workspace }}/RELEASE_NOTES.md 2>/dev/null || true) | head -c 1500 | jq -Rs .)
-        ASSETS=$(for f in EthaVPN_*.apk; do
-          abi=${f#EthaVPN_${VERSION}_}; abi=${abi%.apk}      # arm64-v8a, armeabi-v7a, x86, x86_64, universal
+        ASSETS=$(for f in SkyRay_*.apk; do
+          abi=${f#SkyRay_${VERSION}_}; abi=${abi%.apk}      # arm64-v8a, armeabi-v7a, x86, x86_64, universal
           printf '{"abi":"%s","name":"%s","size":%s,"sha256":"%s"}\n' "$abi" "$f" "$(stat -c %s "$f")" "$(sha256sum "$f" | cut -d' ' -f1)"
         done | jq -s .)
         jq -n --arg v "$VERSION" --argjson c "$CODE" --arg p "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg m "$MIN" --argjson n "$NOTES" --argjson a "$ASSETS" \
           '{version:$v, versionCode:$c, published:$p, min_supported:$m, notes:$n, assets:$a}' > latest.json
         cat latest.json
         # the release certificate's SHA-256: goes into assetlinks.json on the server (App Links)
-        $ANDROID_HOME/build-tools/37.0.0/apksigner verify --print-certs EthaVPN_${VERSION}_arm64-v8a.apk \
+        $ANDROID_HOME/build-tools/37.0.0/apksigner verify --print-certs SkyRay_${VERSION}_arm64-v8a.apk \
           | grep -i 'SHA-256' | head -1 | sed -E 's/.*: *//' | tr 'a-f' 'A-F' | sed -E 's/(..)/\1:/g; s/:$//' > signing-cert-sha256.txt
         echo "signing cert sha256: $(cat signing-cert-sha256.txt)"
         echo "### EthaVPN $VERSION" >> $GITHUB_STEP_SUMMARY
@@ -139,7 +139,7 @@ jobs:
       with:
         name: release-files
         path: |
-          ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/EthaVPN_*.apk
+          ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/SkyRay_*.apk
           ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/latest.json
           ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/signing-cert-sha256.txt
 
@@ -166,7 +166,7 @@ jobs:
           PASS_ARGS=()
           if [ -n "$GPG_PASSPHRASE" ]; then PASS_ARGS=(--pinentry-mode loopback --passphrase-fd 3); fi
           mkdir -p release-files
-          for f in release/EthaVPN_*.apk release/latest.json; do
+          for f in release/SkyRay_*.apk release/latest.json; do
             cp "$f" release-files/
             gpg --batch --yes "${PASS_ARGS[@]}" --local-user "$KEY" --detach-sign --output "release-files/$(basename "$f").sig" "$f" 3<<<"$GPG_PASSPHRASE"
           done

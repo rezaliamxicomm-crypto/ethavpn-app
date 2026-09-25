@@ -127,12 +127,12 @@ object AppConfig {
     const val UPSTREAM_URL = "$GITHUB_URL/2dust/v2rayNG"
     const val TG_CHANNEL_URL = "https://t.me/vpnandfree"
 
-    /** EthaVPN: the service this build is made for. */
+    /** EthaVPN: the service this build (the SkyRay app) is made for. */
     const val ETHA_SUB_HOST = "fra.mobileiphone.org"
     val ETHA_SUB_HOSTS = listOf(ETHA_SUB_HOST)
     const val ETHA_SUB_PATH = "/sub/"
     const val ETHA_SUB_NAME = "EthaVPN"
-    const val ETHA_USER_AGENT = "EthaVPN/${BuildConfig.VERSION_NAME} (android)"
+    const val ETHA_USER_AGENT = "SkyRay/${BuildConfig.VERSION_NAME} (android)"   // how the server knows this app fetched
     const val ETHA_SUB_UPDATE_MINUTES = 180L                 // = the API's Profile-Update-Interval: 3 h (the header wins after the first fetch)
     const val ETHA_SUB_STALE_MS = 3_600_000L                 // on open: refresh the subscription quietly when its last fetch is older than this
     const val ETHA_DOWNLOAD_BASE = "https://$ETHA_SUB_HOST/dl/"
@@ -198,7 +198,7 @@ object AppConfig {
 
     /** Notification channel IDs and names. */
     const val RAY_NG_CHANNEL_ID = "RAY_NG_M_CH_ID"
-    const val RAY_NG_CHANNEL_NAME = "EthaVPN Background Service"
+    const val RAY_NG_CHANNEL_NAME = "SkyRay Background Service"
 
     /** Protocols Scheme **/
     const val VMESS = "vmess://"

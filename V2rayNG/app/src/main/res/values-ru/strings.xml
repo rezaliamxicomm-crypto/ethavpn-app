@@ -510,7 +510,7 @@
     <string name="etha_update_required">Эта версия устарела. Нажмите, чтобы обновить.</string>
     <string name="etha_update_downloading">Загрузка обновления…</string>
     <string name="etha_update_verify_failed">Загруженный файл не прошёл проверку. Попробуйте позже.</string>
-    <string name="etha_update_allow_install">Разрешите установку приложений из EthaVPN и снова нажмите Обновить.</string>
+    <string name="etha_update_allow_install">Разрешите установку приложений из SkyRay и снова нажмите Обновить.</string>
     <string name="etha_update_download_failed">Загрузка не удалась. Сначала подключитесь, затем повторите.</string>
     <string name="etha_about_upstream">На основе v2rayNG (GPL-3.0) и Xray-core</string>
 

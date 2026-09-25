@@ -1,1 +1,1 @@
-Your subscription now refreshes by itself: every 3 hours in the background and whenever you open the app after an hour. Renewals and new servers arrive without tapping refresh.
+EthaVPN's app is now SkyRay: a new name and a new icon. Everything else stays the same — your link, your account and the automatic refresh.

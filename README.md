@@ -26,6 +26,10 @@ download from anywhere else. The APK signing certificate's SHA-256 is in every r
 - `EthaSettingsActivity`: six rows — server, apps that bypass the VPN, language, update, send
   logs, About. The full v2rayNG interface is reachable only after seven taps on the version
   line in About (`Advanced (v2rayNG)` appears in Settings); nothing else of it is exposed.
+- The app is called **SkyRay** (launcher name, title, notification channel, `SkyRay/<version> (android)`
+  User-Agent, `SkyRay_<version>_<abi>.apk` files); the package id stays `com.ethavpn.app`. The icon is a
+  comet over a night sky: vector drawables `ic_launcher_*_skyray` for the adaptive icon, and
+  `tools/skyray_icon.py` paints the same design into the fallback PNGs (launcher, status bar, TV banner).
 - Deep links: `ethavpn://install-sub?url=…` and verified App Links for
   `https://<host>/sub/<token>` (`UrlSchemeActivity`).
 - Subscription headers (`Subscription-Userinfo`, `Profile-Title`, `Profile-Update-Interval`,

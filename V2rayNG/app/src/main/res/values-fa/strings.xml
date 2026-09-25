@@ -489,7 +489,7 @@
     <string name="etha_update_required">این نسخه قدیمی است. برای ادامه‌ی اتصال بزنید و بروزرسانی کنید.</string>
     <string name="etha_update_downloading">در حال دانلود بروزرسانی…</string>
     <string name="etha_update_verify_failed">فایل دانلودشده تأیید نشد. بعداً دوباره امتحان کنید.</string>
-    <string name="etha_update_allow_install">نصب برنامه از EthaVPN را مجاز کنید و دوباره بروزرسانی را بزنید.</string>
+    <string name="etha_update_allow_install">نصب برنامه از SkyRay را مجاز کنید و دوباره بروزرسانی را بزنید.</string>
     <string name="etha_update_download_failed">دانلود انجام نشد. اول وصل شوید و دوباره امتحان کنید.</string>
     <string name="etha_about_upstream">ساخته‌شده بر پایه‌ی v2rayNG (GPL-3.0) و Xray-core</string>
 

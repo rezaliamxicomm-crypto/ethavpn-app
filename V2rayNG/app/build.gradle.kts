@@ -15,8 +15,8 @@ android {
         applicationId = "com.ethavpn.app"
         minSdk = 24
         targetSdk = 37
-        versionCode = 103
-        versionName = "1.0.3"
+        versionCode = 110
+        versionName = "1.1.0"
         multiDexEnabled = true
         manifestPlaceholders["subHost"] = "fra.mobileiphone.org"
 
@@ -87,7 +87,7 @@ android {
             .map { it as com.android.build.gradle.internal.api.ApkVariantOutputImpl }
             .forEach { output ->
                 val abi = output.getFilter("ABI") ?: "universal"
-                output.outputFileName = "EthaVPN_${variant.versionName}_${abi}.apk"
+                output.outputFileName = "SkyRay_${variant.versionName}_${abi}.apk"
                 output.versionCodeOverride = 4000000 + variant.versionCode
             }
     }

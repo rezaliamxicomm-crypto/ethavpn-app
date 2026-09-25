@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">EthaVPN</string>
+    <string name="app_name" translatable="false">SkyRay</string>
     <string name="app_widget_name">Switch</string>
     <string name="app_tile_name">Switch</string>
     <string name="app_tile_first_use">First use of this feature, please use the app to add server</string>
@@ -513,7 +513,7 @@
     <string name="etha_update_required">This version is too old. Tap to update and keep connecting.</string>
     <string name="etha_update_downloading">Downloading the update…</string>
     <string name="etha_update_verify_failed">The downloaded file did not verify. Try again later.</string>
-    <string name="etha_update_allow_install">Allow installing apps from EthaVPN, then tap Update again.</string>
+    <string name="etha_update_allow_install">Allow installing apps from SkyRay, then tap Update again.</string>
     <string name="etha_update_download_failed">Download failed. Connect first, then try again.</string>
     <string name="etha_about_upstream">Based on v2rayNG (GPL-3.0) and Xray-core</string>
 
