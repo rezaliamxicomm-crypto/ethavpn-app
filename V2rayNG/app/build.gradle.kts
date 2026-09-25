@@ -12,11 +12,11 @@ android {
         // EthaVPN: its own id (both apps can be installed side by side); the code keeps the
         // upstream namespace so the fork stays a small diff. subHost = the link's host, for
         // the App Links filter in the manifest (https://<subHost>/sub/<token> opens the app).
-        applicationId = "com.ethavpn.app"
+        applicationId = "com.allion.skyray"   // the id registered on Google Play (and the App Store bundle id)
         minSdk = 24
         targetSdk = 37
-        versionCode = 110
-        versionName = "1.1.0"
+        versionCode = 111
+        versionName = "1.1.1"
         multiDexEnabled = true
         manifestPlaceholders["subHost"] = "fra.mobileiphone.org"
 
