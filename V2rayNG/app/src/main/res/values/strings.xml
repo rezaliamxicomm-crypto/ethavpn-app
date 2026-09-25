@@ -530,6 +530,11 @@
     <string name="etha_send_logs">Send logs to support</string>
     <string name="etha_send_logs_hint">Only when support asks for it</string>
     <string name="etha_privacy_policy">Privacy policy</string>
+    <string name="etha_delete_account">Delete account</string>
+    <string name="etha_delete_account_hint">Removes your subscription and all its data from this phone</string>
+    <string name="etha_delete_account_confirm">Your subscription, its servers and all account data are removed from this phone. Your link in Telegram keeps working, so you can add it again any time.</string>
+    <string name="etha_delete_account_do">Delete</string>
+    <string name="etha_delete_account_done">Account deleted from this phone</string>
     <string name="etha_expert_on">Expert mode on: Advanced (v2rayNG) is now in Settings</string>
     <string name="etha_expert_off">Expert mode off</string>
     <string name="etha_advanced_v2rayng">Advanced (v2rayNG)</string>

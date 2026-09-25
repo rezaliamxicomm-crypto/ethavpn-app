@@ -149,6 +149,7 @@ object AppConfig {
     const val PREF_ETHA_EXPERT = "pref_etha_expert"          // seven taps on the version: the v2rayNG UI appears in Settings
     const val PREF_ETHA_LAST_TEST = "pref_etha_last_test"
     const val PREF_ETHA_LAST_UPDATE_CHECK = "pref_etha_last_update_check"
+    const val PREF_ETHA_DELETED_LINK = "pref_etha_deleted_link"   // "Delete account" removed it: never imported from the clipboard by itself again
     const val DELAY_TEST_URL = "https://www.gstatic.com/generate_204"
     const val DELAY_TEST_URL2 = "https://www.google.com/generate_204"
 

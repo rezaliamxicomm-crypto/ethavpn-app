@@ -183,7 +183,7 @@ class HomeActivity : HelperBaseActivity() {
         val text = try { Utils.getClipboard(this) } catch (_: Exception) { "" }
         if (text.isBlank() || text == "null") return false
         val link = EthaSubscription.extractSubLink(text) ?: return true
-        if (link == clipboardTried) return true
+        if (link == clipboardTried || link == MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_DELETED_LINK)) return true
         clipboardTried = link
         LogUtil.i(AppConfig.TAG, "A link on the clipboard, importing")
         importLink(link)
@@ -418,6 +418,7 @@ class HomeActivity : HelperBaseActivity() {
     /** Adds the subscription (or refreshes it when it is already there) and connects. */
     private fun importLink(raw: String) {
         val link = EthaSubscription.extractSubLink(raw) ?: raw
+        MmkvManager.encodeSettings(AppConfig.PREF_ETHA_DELETED_LINK, "")   // asked for by hand: no longer "deleted"
         val named = if (link.contains('#')) link else "$link#${AppConfig.ETHA_SUB_NAME}"
         showLoading()
         lifecycleScope.launch(Dispatchers.IO) {

@@ -7,11 +7,14 @@ import androidx.core.view.isVisible
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.databinding.ActivityEthaSettingsBinding
+import com.v2ray.ang.core.CoreServiceManager
+import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.EthaSubscription
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.util.Utils
 
 /**
- * The customer's settings: seven rows. Everything v2rayNG exposes stays in the code but is
+ * The customer's settings: eight rows. Everything v2rayNG exposes stays in the code but is
  * reachable only through the `Advanced (v2rayNG)` row, which appears after seven taps on the
  * version line in About (expert mode, for the operator and support).
  */
@@ -39,6 +42,7 @@ class EthaSettingsActivity : BaseActivity() {
         binding.layoutLogs.setOnClickListener { startActivity(Intent(this, LogcatActivity::class.java)) }
         binding.layoutAbout.setOnClickListener { startActivity(Intent(this, AboutActivity::class.java)) }
         binding.layoutPrivacy.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_PRIVACY_URL) }
+        binding.layoutDelete.setOnClickListener { confirmDelete() }
         binding.layoutAdvanced.setOnClickListener { startActivity(Intent(this, MainActivity::class.java)) }
     }
 
@@ -73,6 +77,25 @@ class EthaSettingsActivity : BaseActivity() {
                 finish()
             }
         )
+    }
+
+    /** "Delete account": everything of the customer's on this phone, after one confirmation. */
+    private fun confirmDelete() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.etha_delete_account)
+            .setMessage(R.string.etha_delete_account_confirm)
+            .setPositiveButton(R.string.etha_delete_account_do) { _, _ -> deleteAccount() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun deleteAccount() {
+        CoreServiceManager.stopVService(this)      // nothing to do when it is not running
+        EthaSubscription.deleteAll()
+        toastSuccess(R.string.etha_delete_account_done)
+        // Home starts over and shows the empty card
+        startActivity(Intent(this, HomeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        finish()
     }
 
     private fun pickLanguage() {

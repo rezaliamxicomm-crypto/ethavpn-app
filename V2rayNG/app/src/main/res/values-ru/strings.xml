@@ -527,6 +527,11 @@
     <string name="etha_send_logs">Отправить журнал в поддержку</string>
     <string name="etha_send_logs_hint">Только по просьбе поддержки</string>
     <string name="etha_privacy_policy">Политика конфиденциальности</string>
+    <string name="etha_delete_account">Удалить аккаунт</string>
+    <string name="etha_delete_account_hint">Удаляет подписку и все её данные с этого телефона</string>
+    <string name="etha_delete_account_confirm">Подписка, её серверы и все данные аккаунта будут удалены с этого телефона. Ваша ссылка в Telegram продолжит работать — добавить её можно в любой момент.</string>
+    <string name="etha_delete_account_do">Удалить</string>
+    <string name="etha_delete_account_done">Аккаунт удалён с этого телефона</string>
     <string name="etha_expert_on">Экспертный режим включён: в настройках появился пункт Дополнительно (v2rayNG)</string>
     <string name="etha_expert_off">Экспертный режим выключен</string>
     <string name="etha_advanced_v2rayng">Дополнительно (v2rayNG)</string>

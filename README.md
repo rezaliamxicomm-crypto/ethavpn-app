@@ -23,8 +23,9 @@ download from anywhere else. The APK signing certificate's SHA-256 is in every r
 - `HomeActivity`: one screen — paste / scan / receive the link, Connect, the server choice
   (`Auto (fastest)` by default, or a line picked by hand — `ServerPicker`), account card
   (days, data, notice), Renew, Support.
-- `EthaSettingsActivity`: six rows — server, apps that bypass the VPN, language, update, send
-  logs, About. The full v2rayNG interface is reachable only after seven taps on the version
+- `EthaSettingsActivity`: eight rows — server, apps that bypass the VPN, language, update, send
+  logs, About, privacy policy (opens allionapp.com/skyray-privacy), delete account (wipes the
+  subscription, its servers and the account data from the phone after a confirmation). The full v2rayNG interface is reachable only after seven taps on the version
   line in About (`Advanced (v2rayNG)` appears in Settings); nothing else of it is exposed.
 - The app is called **SkyRay** (launcher name, title, notification channel, `SkyRay/<version> (android)`
   User-Agent, `SkyRay_<version>_<abi>.apk` files); the application id is `com.allion.skyray` (the id registered on

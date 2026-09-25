@@ -109,6 +109,26 @@ object EthaSubscription {
             ?: subs.firstOrNull { it.subscription.enabled }
     }
 
+    /**
+     * "Delete account": every subscription with its servers and test results, the chosen line
+     * and the account preferences go; the deleted link is remembered so the clipboard import
+     * does not put it straight back (a tap on the link in Telegram, Paste or a QR code still
+     * does). Language and expert mode are the phone's, not the account's, and stay.
+     */
+    fun deleteAll() {
+        val subs = MmkvManager.decodeSubscriptions()
+        val link = subs.map { it.subscription.url }.firstOrNull { isSubLink(it) } ?: ""
+        subs.forEach {
+            SubscriptionUpdater.cancelOne(subId = it.guid)
+            MmkvManager.removeSubscription(it.guid)
+        }
+        MmkvManager.removeAllServer()
+        MmkvManager.setSelectServer("")
+        MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, false)
+        MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LAST_TEST, 0L)
+        MmkvManager.encodeSettings(AppConfig.PREF_ETHA_DELETED_LINK, link)
+    }
+
     /** Whether the selected server belongs to this subscription. */
     fun selectedIsIn(subId: String): Boolean {
         val guid = MmkvManager.getSelectServer() ?: return false

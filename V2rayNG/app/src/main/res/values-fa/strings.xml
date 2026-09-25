@@ -506,6 +506,11 @@
     <string name="etha_send_logs">ارسال گزارش به پشتیبانی</string>
     <string name="etha_send_logs_hint">فقط وقتی پشتیبانی بخواهد</string>
     <string name="etha_privacy_policy">حریم خصوصی</string>
+    <string name="etha_delete_account">حذف حساب</string>
+    <string name="etha_delete_account_hint">اشتراک و همه‌ی اطلاعات آن از این گوشی پاک می‌شود</string>
+    <string name="etha_delete_account_confirm">اشتراک، سرورها و همه‌ی اطلاعات حساب از این گوشی پاک می‌شود. لینک شما در تلگرام همچنان کار می‌کند و هر وقت خواستید دوباره اضافه می‌شود.</string>
+    <string name="etha_delete_account_do">حذف</string>
+    <string name="etha_delete_account_done">حساب از این گوشی پاک شد</string>
     <string name="etha_expert_on">حالت حرفه‌ای روشن شد: «پیشرفته (v2rayNG)» در تنظیمات آمد</string>
     <string name="etha_expert_off">حالت حرفه‌ای خاموش شد</string>
     <string name="etha_advanced_v2rayng">پیشرفته (v2rayNG)</string>

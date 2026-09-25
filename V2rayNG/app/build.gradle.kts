@@ -15,8 +15,8 @@ android {
         applicationId = "com.allion.skyray"   // the id registered on Google Play (and the App Store bundle id)
         minSdk = 24
         targetSdk = 37
-        versionCode = 113
-        versionName = "1.1.3"
+        versionCode = 114
+        versionName = "1.1.4"
         multiDexEnabled = true
         manifestPlaceholders["subHost"] = "fra.mobileiphone.org"
 
