@@ -37,7 +37,7 @@
    git tag vX.Y.Z && git push github vX.Y.Z
    ```
    Actions → Build APK → Run workflow → `release_tag` = `vX.Y.Z`. The release gets
-   `EthaVPN_X.Y.Z_<abi>.apk` (+ `.sig`), `latest.json` (+ `.sig`), `ethavpn-release-key.asc`,
+   `SkyRay_X.Y.Z_<abi>.apk` (+ `.sig`), `latest.json` (+ `.sig`), `ethavpn-release-key.asc`,
    `release-key-fingerprint.txt`, `signing-cert-sha256.txt`.
 4. On the server: `ethavpn-app-publish vX.Y.Z` (verifies the signatures against the pinned key
    and every sha256, installs under `/var/www/html/dl/`, prints the channel post). The bot picks
