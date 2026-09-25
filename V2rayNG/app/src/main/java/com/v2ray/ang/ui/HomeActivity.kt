@@ -58,6 +58,7 @@ class HomeActivity : HelperBaseActivity() {
     private val mainViewModel: MainViewModel by viewModels()
     private var sub: SubscriptionCache? = null
     private var connecting = false        // waiting for the core to report started / stopped
+    private var refreshingQuietly = false // a background subscription refresh is running
     private var pendingConnect = false    // waiting for a real-delay batch to pick the line
     private var updateResult: CheckUpdateResult? = null
     private var rows: List<ServerPicker.Row> = emptyList()
@@ -157,6 +158,7 @@ class HomeActivity : HelperBaseActivity() {
         super.onResume()
         refreshSubscription()
         render()
+        refreshQuietlyIfStale()
     }
 
     // ---------------------------------------------------------------- state
@@ -403,6 +405,7 @@ class HomeActivity : HelperBaseActivity() {
                 hideLoading()
                 refreshSubscription()
                 render()
+                SubscriptionUpdater.sync(forceReschedule = true)   // the background refresh, timed from this fetch
                 val servers = sub?.let { MmkvManager.decodeServerList(it.guid) }.orEmpty()
                 if (servers.isEmpty()) {
                     toastError(R.string.import_subscription_failure)
@@ -410,6 +413,32 @@ class HomeActivity : HelperBaseActivity() {
                     toastSuccess(R.string.etha_link_added)
                     if (mainViewModel.isRunning.value != true && !connecting && !pendingConnect) onConnectClick()
                 }
+            }
+        }
+    }
+
+    /**
+     * The subscription refreshes by itself: a WorkManager job every ETHA_SUB_UPDATE_MINUTES (the
+     * API's Profile-Update-Interval, applied on every fetch) and — because Android may hold that
+     * job back for hours on a battery-saving phone — a quiet refresh whenever this screen comes
+     * up and the last fetch is older than ETHA_SUB_STALE_MS. No spinner, no toast: a failure
+     * just leaves the current servers in place.
+     */
+    private fun refreshQuietlyIfStale() {
+        val s = sub ?: return
+        if (refreshingQuietly || !EthaSubscription.isStale(s.subscription.lastUpdated)) return
+        refreshingQuietly = true
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                AngConfigManager.updateConfigViaSubAll()
+            } catch (e: Exception) {
+                LogUtil.e(AppConfig.TAG, "Quiet refresh failed", e)
+            }
+            withContext(Dispatchers.Main) {
+                refreshingQuietly = false
+                refreshSubscription()
+                render()
+                SubscriptionUpdater.sync(forceReschedule = true)
             }
         }
     }
@@ -422,6 +451,7 @@ class HomeActivity : HelperBaseActivity() {
                 hideLoading()
                 refreshSubscription()
                 render()
+                SubscriptionUpdater.sync(forceReschedule = true)   // the background refresh, timed from this fetch
                 if (result.successCount > 0) {
                     toastSuccess(getString(R.string.title_update_config_count, result.configCount))
                 } else {

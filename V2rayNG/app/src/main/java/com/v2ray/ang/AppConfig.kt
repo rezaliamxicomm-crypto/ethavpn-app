@@ -133,7 +133,8 @@ object AppConfig {
     const val ETHA_SUB_PATH = "/sub/"
     const val ETHA_SUB_NAME = "EthaVPN"
     const val ETHA_USER_AGENT = "EthaVPN/${BuildConfig.VERSION_NAME} (android)"
-    const val ETHA_SUB_UPDATE_MINUTES = 720L                 // = the API's Profile-Update-Interval: 12 h
+    const val ETHA_SUB_UPDATE_MINUTES = 180L                 // = the API's Profile-Update-Interval: 3 h (the header wins after the first fetch)
+    const val ETHA_SUB_STALE_MS = 3_600_000L                 // on open: refresh the subscription quietly when its last fetch is older than this
     const val ETHA_DOWNLOAD_BASE = "https://$ETHA_SUB_HOST/dl/"
     const val ETHA_LATEST_URL = "${ETHA_DOWNLOAD_BASE}latest.json"
     const val ETHA_BOT_URL = "https://t.me/Ethaconfigbot"

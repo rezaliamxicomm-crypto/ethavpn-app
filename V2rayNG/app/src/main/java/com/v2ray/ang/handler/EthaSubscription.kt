@@ -59,6 +59,10 @@ object EthaSubscription {
         else -> maxOf(0L, (expire - nowSec + 86399) / 86400)
     }
 
+    /** Whether a subscription fetched at `lastUpdated` (ms; ≤ 0 = never) is due for a quiet refresh. */
+    fun isStale(lastUpdated: Long, nowMs: Long = System.currentTimeMillis(), maxAgeMs: Long = AppConfig.ETHA_SUB_STALE_MS): Boolean =
+        lastUpdated <= 0L || nowMs - lastUpdated >= maxAgeMs
+
     /** An EthaVPN link: https, one of our hosts, exactly /sub/<token> (a fragment is fine, it names the profile). */
     fun isSubLink(text: String?): Boolean {
         val uri = try { URI(text?.trim() ?: return false) } catch (_: Exception) { return false }

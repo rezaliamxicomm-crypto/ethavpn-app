@@ -139,4 +139,16 @@ class EthaSubscriptionTest {
         assertNull(EthaSubscription.base64Decode("!!"))
         assertNull(EthaSubscription.base64Decode(""))
     }
+
+    @Test
+    fun staleWhenNeverFetchedOrOlderThanAnHour() {
+        val now = 10_000_000_000L
+        assertTrue(EthaSubscription.isStale(-1L, now))
+        assertTrue(EthaSubscription.isStale(0L, now))
+        assertTrue(EthaSubscription.isStale(now - AppConfig.ETHA_SUB_STALE_MS, now))
+        assertFalse(EthaSubscription.isStale(now - AppConfig.ETHA_SUB_STALE_MS + 1, now))
+        assertFalse(EthaSubscription.isStale(now, now))
+        assertEquals(180L, AppConfig.ETHA_SUB_UPDATE_MINUTES)                 // = the API's 3 h
+        assertEquals(180L, EthaSubscription.updateIntervalMinutes("3"))
+    }
 }

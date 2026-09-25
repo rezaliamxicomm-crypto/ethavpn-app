@@ -1,1 +1,1 @@
-Auto re-picks the fastest line after every test and moves over when connected. Short server names with the ping first, fastest on top.
+Your subscription now refreshes by itself: every 3 hours in the background and whenever you open the app after an hour. Renewals and new servers arrive without tapping refresh.

@@ -30,6 +30,9 @@ download from anywhere else. The APK signing certificate's SHA-256 is in every r
   `https://<host>/sub/<token>` (`UrlSchemeActivity`).
 - Subscription headers (`Subscription-Userinfo`, `Profile-Title`, `Profile-Update-Interval`,
   `Announce`, `Support-Url`, `Profile-Web-Page-Url`) parsed and shown (`EthaSubscription`).
+- The subscription refreshes by itself: the upstream per-subscription WorkManager job
+  (`SubscriptionUpdater`, quiet for our link) every `Profile-Update-Interval` hours — 3 — scheduled
+  as soon as the link is imported, plus a silent refresh when the screen comes up after an hour.
 - Auto-select on Connect (`AutoSelect`) and a watchdog while connected that switches lines
   after two failed probes (`CoreServiceManager`), unless the customer keeps a line pinned.
 - Updates from the service's own `/dl/latest.json`, verified by sha256 before install

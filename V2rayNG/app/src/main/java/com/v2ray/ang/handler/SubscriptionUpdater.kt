@@ -172,9 +172,11 @@ object SubscriptionUpdater {
             }
 
             val sub = SubscriptionCache(subId, subItem)
+            // EthaVPN's own link refreshes every few hours: no notification each time.
+            val quiet = EthaSubscription.isSubLink(subItem.url)
 
             // Notify about update start
-            NotificationHelper.notify(
+            if (!quiet) NotificationHelper.notify(
                 NotificationChannelType.SUBSCRIPTION_UPDATE,
                 applicationContext,
                 applicationContext.getString(R.string.title_pref_auto_update_subscription),
@@ -185,7 +187,7 @@ object SubscriptionUpdater {
             AngConfigManager.updateConfigViaSub(sub)
 
             // Clear notification
-            NotificationHelper.cancel(NotificationChannelType.SUBSCRIPTION_UPDATE, applicationContext)
+            if (!quiet) NotificationHelper.cancel(NotificationChannelType.SUBSCRIPTION_UPDATE, applicationContext)
 
             return Result.success()
         }

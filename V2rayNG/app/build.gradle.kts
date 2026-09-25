@@ -15,8 +15,8 @@ android {
         applicationId = "com.ethavpn.app"
         minSdk = 24
         targetSdk = 37
-        versionCode = 102
-        versionName = "1.0.2"
+        versionCode = 103
+        versionName = "1.0.3"
         multiDexEnabled = true
         manifestPlaceholders["subHost"] = "fra.mobileiphone.org"
 
