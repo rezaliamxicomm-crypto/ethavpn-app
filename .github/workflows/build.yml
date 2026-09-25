@@ -94,7 +94,7 @@ jobs:
         cd ${{ github.workspace }}/V2rayNG
         echo "sdk.dir=${ANDROID_HOME}" > local.properties
         chmod 755 gradlew
-        ./gradlew testDirectReleaseUnitTest
+        ./gradlew :app:testDirectDebugUnitTest
 
     - name: Decode Keystore
       uses: timheuer/base64-to-file@v2.0.0
