@@ -1,1 +1,1 @@
-EthaVPN's app is now SkyRay: a new name and a new icon, under the app id registered in the stores. Your link, your account and the automatic refresh stay the same.
+SkyRay adds your account by itself the first time you open it after installing from your link — no need to tap the link again.

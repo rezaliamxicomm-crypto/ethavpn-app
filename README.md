@@ -31,6 +31,8 @@ download from anywhere else. The APK signing certificate's SHA-256 is in every r
   Google Play; the App Store bundle id is the same). The icon is a
   comet over a night sky: vector drawables `ic_launcher_*_skyray` for the adaptive icon, and
   `tools/skyray_icon.py` paints the same design into the fallback PNGs (launcher, status bar, TV banner).
+- First launch with no account: if the clipboard holds one of our links (the landing page copies it when the
+  customer taps Download), the account is added by itself (`HomeActivity.onWindowFocusChanged`).
 - Deep links: `ethavpn://install-sub?url=…` (the scheme did not change with the id) and verified App Links for
   `https://<host>/sub/<token>` (`UrlSchemeActivity`).
 - Subscription headers (`Subscription-Userinfo`, `Profile-Title`, `Profile-Update-Interval`,

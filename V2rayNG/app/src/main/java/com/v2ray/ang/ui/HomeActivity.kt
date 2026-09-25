@@ -59,6 +59,7 @@ class HomeActivity : HelperBaseActivity() {
     private var sub: SubscriptionCache? = null
     private var connecting = false        // waiting for the core to report started / stopped
     private var refreshingQuietly = false // a background subscription refresh is running
+    private var clipboardChecked = false  // the first-launch import from the clipboard runs once per process
     private var pendingConnect = false    // waiting for a real-delay batch to pick the line
     private var updateResult: CheckUpdateResult? = null
     private var rows: List<ServerPicker.Row> = emptyList()
@@ -159,6 +160,22 @@ class HomeActivity : HelperBaseActivity() {
         refreshSubscription()
         render()
         refreshQuietlyIfStale()
+    }
+
+    /**
+     * First launch, no account yet: the landing page copies the customer's link to the clipboard
+     * when they tap "Download SkyRay", so the app can add the account by itself — no second tap on
+     * the link. Android hands the clipboard to the app only once its window has focus, hence here;
+     * once per process, only while there is no subscription, only for one of our links.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || clipboardChecked || sub != null || connecting) return
+        clipboardChecked = true
+        val text = try { Utils.getClipboard(this) } catch (_: Exception) { "" }
+        val link = EthaSubscription.extractSubLink(text) ?: return
+        LogUtil.i(AppConfig.TAG, "First launch: a link on the clipboard, importing")
+        importLink(link)
     }
 
     // ---------------------------------------------------------------- state
