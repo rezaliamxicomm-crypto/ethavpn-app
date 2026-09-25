@@ -493,4 +493,20 @@
     <string name="etha_update_download_failed">دانلود انجام نشد. اول وصل شوید و دوباره امتحان کنید.</string>
     <string name="etha_about_upstream">ساخته‌شده بر پایه‌ی v2rayNG (GPL-3.0) و Xray-core</string>
 
+    <string name="etha_server_auto">خودکار (سریع‌ترین)</string>
+    <string name="etha_server_button">سرور: %s</string>
+    <string name="etha_server_pick">انتخاب سرور</string>
+    <string name="etha_test_again">آزمایش دوباره</string>
+    <string name="etha_ping_untested">آزمایش نشده</string>
+    <string name="etha_ping_failed">ناموفق</string>
+    <string name="etha_bypass_apps">برنامه‌هایی که از VPN رد نمی‌شوند</string>
+    <string name="etha_bypass_apps_hint">برنامه‌های بانکی و دولتی که اتصال خارجی را نمی‌پذیرند</string>
+    <string name="etha_language">زبان</string>
+    <string name="etha_send_logs">ارسال گزارش به پشتیبانی</string>
+    <string name="etha_send_logs_hint">فقط وقتی پشتیبانی بخواهد</string>
+    <string name="etha_expert_on">حالت حرفه‌ای روشن شد: «پیشرفته (v2rayNG)» در تنظیمات آمد</string>
+    <string name="etha_expert_off">حالت حرفه‌ای خاموش شد</string>
+    <string name="etha_advanced_v2rayng">پیشرفته (v2rayNG)</string>
+    <string name="etha_advanced_v2rayng_hint">کلاینت کامل. فقط برای پشتیبانی.</string>
+
 </resources>

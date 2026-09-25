@@ -46,6 +46,7 @@ import java.util.Locale
 class HomeActivity : HelperBaseActivity() {
     companion object {
         const val EXTRA_LINK = "etha_link"
+        const val EXTRA_TEST = "etha_test"          // Settings asked for a "test again"
         private const val CONNECT_GUARD_MS = 25_000L
         private const val TEST_GUARD_MS = 60_000L
     }
@@ -56,6 +57,7 @@ class HomeActivity : HelperBaseActivity() {
     private var connecting = false        // waiting for the core to report started / stopped
     private var pendingConnect = false    // waiting for a real-delay batch to pick the line
     private var updateResult: CheckUpdateResult? = null
+    private var picker: androidx.appcompat.app.AlertDialog? = null
 
     private val requestVpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (it.resultCode == RESULT_OK) {
@@ -72,6 +74,8 @@ class HomeActivity : HelperBaseActivity() {
         SettingsChangeManager.consumeSetupGroupTab()
         refreshSubscription()
         render()
+        if (it.data?.getBooleanExtra(EthaSettingsActivity.EXTRA_SERVER_CHANGED, false) == true) onServerChoiceChanged()
+        if (it.data?.getBooleanExtra(EXTRA_TEST, false) == true) testAgain()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,7 +88,7 @@ class HomeActivity : HelperBaseActivity() {
         binding.btnRefresh.setOnClickListener { refreshServers() }
         binding.btnRenew.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_RENEW_URL) }
         binding.btnSupport.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_SUPPORT_URL) }
-        binding.btnAdvanced.setOnClickListener { requestActivityLauncher.launch(Intent(this, MainActivity::class.java)) }
+        binding.btnServer.setOnClickListener { pickServer() }
         binding.tvUpdate.setOnClickListener { startActivity(Intent(this, CheckUpdateActivity::class.java)) }
 
         mainViewModel.isRunning.observe(this) { running ->
@@ -100,6 +104,10 @@ class HomeActivity : HelperBaseActivity() {
                 connectWithBest()
             } else {
                 render()
+                if (picker?.isShowing == true) {       // "Test again": show the fresh pings
+                    picker?.dismiss()
+                    pickServer()
+                }
             }
         }
         mainViewModel.startListenBroadcast()
@@ -155,16 +163,56 @@ class HomeActivity : HelperBaseActivity() {
         binding.btnConnect.isEnabled = !connecting && !pendingConnect
         binding.progress.isVisible = connecting || pendingConnect
         binding.tvLine.text = lineText(null)
+        binding.btnServer.text = getString(R.string.etha_server_button, ServerPicker.currentLabel(this, isPinned()))
         if (s != null) renderAccount(s.subscription)
-        invalidateOptionsMenu()
+    }
+
+    // ---------------------------------------------------------------- the server choice
+
+    private fun pickServer() {
+        val s = sub ?: return
+        picker = ServerPicker.show(this, s.guid, isPinned(),
+            onPick = { guid ->
+                if (guid == null) {
+                    MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, false)
+                } else {
+                    MmkvManager.setSelectServer(guid)
+                    MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, true)
+                }
+                onServerChoiceChanged()
+            },
+            onTest = { testAgain() })
+    }
+
+    /** A new choice while connected reconnects with it (Auto: the best line after a fresh test). */
+    private fun onServerChoiceChanged() {
+        render()
+        if (mainViewModel.isRunning.value != true) return
+        connecting = true
+        render()
+        CoreServiceManager.stopVService(this)
+        lifecycleScope.launch {
+            delay(700)
+            connecting = false
+            if (!isPinned()) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LAST_TEST, 0L)   // Auto: a fresh test before connecting
+            onConnectClick()
+        }
+    }
+
+    private fun testAgain() {
+        val s = sub ?: return
+        if (MmkvManager.decodeServerList(s.guid).isEmpty()) return
+        toast(R.string.etha_state_finding)
+        mainViewModel.testAllRealPing()
     }
 
     private fun lineText(latency: String?): String {
+        if (mainViewModel.isRunning.value != true) return ""
         val guid = MmkvManager.getSelectServer()
         val name = guid?.let { MmkvManager.decodeServerConfig(it)?.remarks }.orEmpty()
         if (name.isEmpty()) return ""
-        val pin = if (isPinned()) " 📌" else ""
-        return getString(R.string.etha_line, name) + pin + (latency?.let { "\n$it" } ?: "")
+        return getString(R.string.etha_line, name) + (latency?.let { "
+$it" } ?: "")
     }
 
     private fun renderAccount(item: SubscriptionItem) {
@@ -391,31 +439,9 @@ class HomeActivity : HelperBaseActivity() {
         return true
     }
 
-    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        menu.findItem(R.id.etha_keep_line)?.isChecked = isPinned()
-        return super.onPrepareOptionsMenu(menu)
-    }
-
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
-        R.id.etha_keep_line -> {
-            MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, !isPinned())
-            render()
-            true
-        }
-        R.id.etha_servers -> {
-            requestActivityLauncher.launch(Intent(this, MainActivity::class.java))
-            true
-        }
         R.id.etha_settings -> {
-            requestActivityLauncher.launch(Intent(this, SettingsActivity::class.java))
-            true
-        }
-        R.id.etha_update -> {
-            startActivity(Intent(this, CheckUpdateActivity::class.java))
-            true
-        }
-        R.id.etha_about -> {
-            startActivity(Intent(this, AboutActivity::class.java))
+            requestActivityLauncher.launch(Intent(this, EthaSettingsActivity::class.java))
             true
         }
         else -> super.onOptionsItemSelected(item)

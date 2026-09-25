@@ -89,6 +89,14 @@
                     android:gravity="center"
                     android:textAppearance="@style/TextAppearance.AppCompat.Small" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_server"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/padding_spacing_dp8"
+                    android:text="@string/etha_server_auto" />
+
                 <com.google.android.material.progressindicator.CircularProgressIndicator
                     android:id="@+id/progress"
                     android:layout_width="wrap_content"
@@ -198,11 +206,5 @@
             android:textAppearance="@style/TextAppearance.AppCompat.Body1"
             android:visibility="gone" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_advanced"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/etha_advanced" />
     </LinearLayout>
 </ScrollView>

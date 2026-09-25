@@ -514,4 +514,20 @@
     <string name="etha_update_download_failed">Загрузка не удалась. Сначала подключитесь, затем повторите.</string>
     <string name="etha_about_upstream">На основе v2rayNG (GPL-3.0) и Xray-core</string>
 
+    <string name="etha_server_auto">Авто (самый быстрый)</string>
+    <string name="etha_server_button">Сервер: %s</string>
+    <string name="etha_server_pick">Выбор сервера</string>
+    <string name="etha_test_again">Проверить снова</string>
+    <string name="etha_ping_untested">не проверен</string>
+    <string name="etha_ping_failed">ошибка</string>
+    <string name="etha_bypass_apps">Приложения в обход VPN</string>
+    <string name="etha_bypass_apps_hint">Банковские и государственные приложения, не работающие через VPN</string>
+    <string name="etha_language">Язык</string>
+    <string name="etha_send_logs">Отправить журнал в поддержку</string>
+    <string name="etha_send_logs_hint">Только по просьбе поддержки</string>
+    <string name="etha_expert_on">Экспертный режим включён: в настройках появился пункт Дополнительно (v2rayNG)</string>
+    <string name="etha_expert_off">Экспертный режим выключен</string>
+    <string name="etha_advanced_v2rayng">Дополнительно (v2rayNG)</string>
+    <string name="etha_advanced_v2rayng_hint">Полный клиент. Только для поддержки.</string>
+
 </resources>

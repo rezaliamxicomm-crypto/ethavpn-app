@@ -78,4 +78,37 @@
         <item name="colorPrimary">@color/color_fab_active</item>
     </style>
 
+    <!-- EthaVPN settings rows -->
+    <style name="EthaSettingsRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:gravity">center_vertical|start</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:padding">@dimen/padding_spacing_dp16</item>
+    </style>
+    <style name="EthaSettingsIcon">
+        <item name="android:layout_width">@dimen/image_size_dp24</item>
+        <item name="android:layout_height">@dimen/image_size_dp24</item>
+        <item name="android:importantForAccessibility">no</item>
+    </style>
+    <style name="EthaSettingsText">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:paddingStart">@dimen/padding_spacing_dp16</item>
+    </style>
+    <style name="EthaSettingsTitle">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.AppCompat.Subhead</item>
+    </style>
+    <style name="EthaSettingsSummary">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.AppCompat.Small</item>
+    </style>
 </resources>

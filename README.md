@@ -20,8 +20,12 @@ download from anywhere else. The APK signing certificate's SHA-256 is in every r
 
 ## What the fork changes
 
-- `HomeActivity`: one screen — paste / scan / receive the link, Connect, account card
-  (days, data, notice), Renew, Support, Advanced.
+- `HomeActivity`: one screen — paste / scan / receive the link, Connect, the server choice
+  (`Auto (fastest)` by default, or a line picked by hand — `ServerPicker`), account card
+  (days, data, notice), Renew, Support.
+- `EthaSettingsActivity`: six rows — server, apps that bypass the VPN, language, update, send
+  logs, About. The full v2rayNG interface is reachable only after seven taps on the version
+  line in About (`Advanced (v2rayNG)` appears in Settings); nothing else of it is exposed.
 - Deep links: `ethavpn://install-sub?url=…` and verified App Links for
   `https://<host>/sub/<token>` (`UrlSchemeActivity`).
 - Subscription headers (`Subscription-Userinfo`, `Profile-Title`, `Profile-Update-Interval`,

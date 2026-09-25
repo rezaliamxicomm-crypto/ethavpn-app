@@ -6,10 +6,13 @@ import com.v2ray.ang.BuildConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreNativeManager
 import com.v2ray.ang.databinding.ActivityAboutBinding
+import com.v2ray.ang.extension.toast
+import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.util.Utils
 
 class AboutActivity : BaseActivity() {
     private val binding by lazy { ActivityAboutBinding.inflate(layoutInflater) }
+    private var versionTaps = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,6 +47,16 @@ class AboutActivity : BaseActivity() {
 
         "v${BuildConfig.VERSION_NAME} (${CoreNativeManager.getLibVersion()})".also {
             binding.tvVersion.text = it
+        }
+        // Expert mode (the full v2rayNG UI under Settings → Advanced): seven taps on the version.
+        binding.tvVersion.setOnClickListener {
+            versionTaps++
+            if (versionTaps >= 7) {
+                versionTaps = 0
+                val on = !MmkvManager.decodeSettingsBool(AppConfig.PREF_ETHA_EXPERT, false)
+                MmkvManager.encodeSettings(AppConfig.PREF_ETHA_EXPERT, on)
+                toast(if (on) R.string.etha_expert_on else R.string.etha_expert_off)
+            }
         }
         BuildConfig.APPLICATION_ID.also {
             binding.tvAppId.text = "${it}\n" + getString(R.string.etha_about_upstream)

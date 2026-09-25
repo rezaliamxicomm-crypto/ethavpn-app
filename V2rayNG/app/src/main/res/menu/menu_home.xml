@@ -2,24 +2,8 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
-        android:id="@+id/etha_keep_line"
-        android:checkable="true"
-        android:title="@string/etha_keep_line"
-        app:showAsAction="never" />
-    <item
-        android:id="@+id/etha_servers"
-        android:title="@string/title_server"
-        app:showAsAction="never" />
-    <item
         android:id="@+id/etha_settings"
+        android:icon="@drawable/ic_settings_24dp"
         android:title="@string/title_settings"
-        app:showAsAction="never" />
-    <item
-        android:id="@+id/etha_update"
-        android:title="@string/update_check_for_update"
-        app:showAsAction="never" />
-    <item
-        android:id="@+id/etha_about"
-        android:title="@string/title_about"
-        app:showAsAction="never" />
+        app:showAsAction="always" />
 </menu>
