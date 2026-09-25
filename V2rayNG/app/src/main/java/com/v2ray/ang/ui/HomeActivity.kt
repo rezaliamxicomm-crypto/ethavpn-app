@@ -1,6 +1,9 @@
 package com.v2ray.ang.ui
 
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.widget.ArrayAdapter
+import androidx.core.content.ContextCompat
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
@@ -57,7 +60,7 @@ class HomeActivity : HelperBaseActivity() {
     private var connecting = false        // waiting for the core to report started / stopped
     private var pendingConnect = false    // waiting for a real-delay batch to pick the line
     private var updateResult: CheckUpdateResult? = null
-    private var picker: androidx.appcompat.app.AlertDialog? = null
+    private var rows: List<ServerPicker.Row> = emptyList()
 
     private val requestVpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (it.resultCode == RESULT_OK) {
@@ -88,7 +91,17 @@ class HomeActivity : HelperBaseActivity() {
         binding.btnRefresh.setOnClickListener { refreshServers() }
         binding.btnRenew.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_RENEW_URL) }
         binding.btnSupport.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_SUPPORT_URL) }
-        binding.btnServer.setOnClickListener { pickServer() }
+        binding.btnTest.setOnClickListener { testAgain() }
+        binding.ddServer.setOnItemClickListener { _, _, position, _ ->
+            val guid = rows.getOrNull(position)?.guid
+            if (guid == null) {
+                MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, false)
+            } else {
+                MmkvManager.setSelectServer(guid)
+                MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, true)
+            }
+            onServerChoiceChanged()
+        }
         binding.tvUpdate.setOnClickListener { startActivity(Intent(this, CheckUpdateActivity::class.java)) }
 
         mainViewModel.isRunning.observe(this) { running ->
@@ -104,10 +117,6 @@ class HomeActivity : HelperBaseActivity() {
                 connectWithBest()
             } else {
                 render()
-                if (picker?.isShowing == true) {       // "Test again": show the fresh pings
-                    picker?.dismiss()
-                    pickServer()
-                }
             }
         }
         mainViewModel.startListenBroadcast()
@@ -159,30 +168,31 @@ class HomeActivity : HelperBaseActivity() {
                 else -> R.string.etha_state_not_connected
             }
         )
-        binding.btnConnect.text = getString(if (running) R.string.etha_disconnect else R.string.etha_connect)
+        binding.tvConnectHint.text = getString(if (running) R.string.etha_tap_to_disconnect else R.string.etha_tap_to_connect)
         binding.btnConnect.isEnabled = !connecting && !pendingConnect
+        binding.btnConnect.backgroundTintList = ColorStateList.valueOf(
+            ContextCompat.getColor(this, if (running) R.color.colorPing else R.color.md_theme_primary)
+        )
         binding.progress.isVisible = connecting || pendingConnect
         binding.tvLine.text = lineText(null)
-        binding.btnServer.text = getString(R.string.etha_server_button, ServerPicker.currentLabel(this, isPinned()))
+        renderServerDropdown(s?.guid)
         if (s != null) renderAccount(s.subscription)
     }
 
-    // ---------------------------------------------------------------- the server choice
-
-    private fun pickServer() {
-        val s = sub ?: return
-        picker = ServerPicker.show(this, s.guid, isPinned(),
-            onPick = { guid ->
-                if (guid == null) {
-                    MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, false)
-                } else {
-                    MmkvManager.setSelectServer(guid)
-                    MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, true)
-                }
-                onServerChoiceChanged()
-            },
-            onTest = { testAgain() })
+    /** The server field: Auto (with the line it picked) or a pinned line; the list carries every ping. */
+    private fun renderServerDropdown(subId: String?) {
+        rows = if (subId == null) emptyList() else ServerPicker.rows(
+            AutoSelect.candidates(subId),
+            nameOf = { guid -> MmkvManager.decodeServerConfig(guid)?.remarks ?: guid },
+            auto = getString(R.string.etha_server_auto),
+            untested = getString(R.string.etha_ping_untested),
+            failed = getString(R.string.etha_ping_failed)
+        )
+        binding.ddServer.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, rows.map { it.text }))
+        binding.ddServer.setText(ServerPicker.currentLabel(this, isPinned()), false)
     }
+
+    // ---------------------------------------------------------------- the server choice
 
     /** A new choice while connected reconnects with it (Auto: the best line after a fresh test). */
     private fun onServerChoiceChanged() {
@@ -217,20 +227,17 @@ class HomeActivity : HelperBaseActivity() {
     private fun renderAccount(item: SubscriptionItem) {
         binding.tvSubName.text = item.profileTitle ?: item.remarks
         val days = EthaSubscription.daysLeft(item.expire)
-        binding.tvDays.text = when {
-            days == null -> ""
-            days == Long.MAX_VALUE -> getString(R.string.etha_no_expiry)
-            days == 0L -> getString(R.string.etha_expired)
-            else -> getString(R.string.etha_days_left, days)
+        when {
+            days == null -> { binding.tvDays.text = "–"; binding.tvDaysLabel.text = getString(R.string.etha_days_label) }
+            days == Long.MAX_VALUE -> { binding.tvDays.text = "∞"; binding.tvDaysLabel.text = getString(R.string.etha_no_expiry) }
+            days == 0L -> { binding.tvDays.text = "0"; binding.tvDaysLabel.text = getString(R.string.etha_expired) }
+            else -> { binding.tvDays.text = days.toString(); binding.tvDaysLabel.text = getString(R.string.etha_days_label) }
         }
-        binding.tvData.text = when {
-            item.total < 0 -> getString(R.string.etha_data_unknown)
-            item.total == 0L -> getString(R.string.etha_data_unlimited)
-            else -> getString(
-                R.string.etha_data_used,
-                fmtBytes(maxOf(0L, item.download) + maxOf(0L, item.upload)),
-                fmtBytes(item.total)
-            )
+        val used = fmtBytes(maxOf(0L, item.download) + maxOf(0L, item.upload))
+        when {
+            item.total < 0 -> { binding.tvData.text = "–"; binding.tvDataLabel.text = getString(R.string.etha_data_unknown) }
+            item.total == 0L -> { binding.tvData.text = used; binding.tvDataLabel.text = getString(R.string.etha_data_unlimited) }
+            else -> { binding.tvData.text = used; binding.tvDataLabel.text = getString(R.string.etha_data_label_of, fmtBytes(item.total)) }
         }
         binding.tvAnnounce.isVisible = !item.announce.isNullOrBlank()
         binding.tvAnnounce.text = item.announce

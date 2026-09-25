@@ -14,12 +14,10 @@ class AutoSelectTest {
     }
 
     @Test
-    fun withinTheTieTheEarlierLineWins() {
-        // clean IPs come first in the body: 95 ms on line 0 beats 80 ms on line 3 (within 30 ms)
-        val best = AutoSelect.best(listOf(c("clean1", 95, 0), c("clean2", 300, 1), c("domain", 80, 3)))
-        assertEquals("clean1", best)
-        // but a clearly faster later line wins
-        assertEquals("domain", AutoSelect.best(listOf(c("clean1", 200, 0), c("domain", 80, 3))))
+    fun theLowestPingWinsAndOnlyAnExactTieFallsBackToBodyOrder() {
+        assertEquals("domain", AutoSelect.best(listOf(c("clean1", 95, 0), c("clean2", 300, 1), c("domain", 80, 3))))
+        assertEquals("clean1", AutoSelect.best(listOf(c("clean1", 80, 0), c("domain", 80, 3))))
+        assertEquals("b", AutoSelect.best(listOf(c("a", 400, 0), c("b", 120, 1), c("c", 121, 2))))
     }
 
     @Test

@@ -509,4 +509,10 @@
     <string name="etha_advanced_v2rayng">پیشرفته (v2rayNG)</string>
     <string name="etha_advanced_v2rayng_hint">کلاینت کامل. فقط برای پشتیبانی.</string>
 
+    <string name="etha_tap_to_connect">برای اتصال بزنید</string>
+    <string name="etha_tap_to_disconnect">برای قطع بزنید</string>
+    <string name="etha_days_label">روز مانده</string>
+    <string name="etha_data_label_of">از %s مصرف شده</string>
+    <string name="etha_auto_picked">خودکار · %s</string>
+
 </resources>

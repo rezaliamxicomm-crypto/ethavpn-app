@@ -533,4 +533,10 @@
     <string name="etha_advanced_v2rayng">Advanced (v2rayNG)</string>
     <string name="etha_advanced_v2rayng_hint">The full client. For support only.</string>
 
+    <string name="etha_tap_to_connect">Tap to connect</string>
+    <string name="etha_tap_to_disconnect">Tap to disconnect</string>
+    <string name="etha_days_label">days left</string>
+    <string name="etha_data_label_of">of %s used</string>
+    <string name="etha_auto_picked">Auto · %s</string>
+
 </resources>

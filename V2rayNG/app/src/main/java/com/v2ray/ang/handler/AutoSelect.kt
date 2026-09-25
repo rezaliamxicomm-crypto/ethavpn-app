@@ -3,13 +3,12 @@ package com.v2ray.ang.handler
 import com.v2ray.ang.AppConfig
 
 /**
- * Which line to connect with. The lowest positive real-delay result wins; results within
- * [TIE_MS] of it count as equal and the earlier line in the subscription body wins the tie
- * (the server lists its clean-IP lines first for a reason). Lines with no result or a failed
- * one (delay <= 0) are never chosen.
+ * Which line to connect with. The lowest positive real-delay result wins outright; only an
+ * exact tie falls back to the earlier line in the subscription body. Lines with no result or
+ * a failed one (delay <= 0) are never chosen.
  */
 object AutoSelect {
-    const val TIE_MS = 30L
+    const val TIE_MS = 0L
 
     data class Candidate(val guid: String, val delayMs: Long, val order: Int)
 

@@ -27,13 +27,18 @@ object ServerPicker {
             Row(c.guid, "${nameOf(c.guid)}  ·  $ping")
         }
 
-    /** What the Home button shows for the current choice. */
+    /** What the server field shows: Auto with the line it picked (once one is selected), or the pinned line. */
     fun currentLabel(context: Context, pinned: Boolean): String {
-        if (!pinned) return context.getString(R.string.etha_server_auto)
-        val guid = MmkvManager.getSelectServer() ?: return context.getString(R.string.etha_server_auto)
-        val profile = MmkvManager.decodeServerConfig(guid) ?: return context.getString(R.string.etha_server_auto)
-        val delay = MmkvManager.decodeServerAffiliationInfo(guid)?.testDelayMillis ?: 0L
-        return if (delay > 0) "${profile.remarks}  ·  $delay ms" else profile.remarks
+        val guid = MmkvManager.getSelectServer()
+        val profile = guid?.let { MmkvManager.decodeServerConfig(it) }
+        val delay = guid?.let { MmkvManager.decodeServerAffiliationInfo(it)?.testDelayMillis } ?: 0L
+        val line = profile?.let { if (delay > 0) "${it.remarks} (${delay} ms)" else it.remarks }
+        return when {
+            !pinned && line == null -> context.getString(R.string.etha_server_auto)
+            !pinned -> context.getString(R.string.etha_auto_picked, line)
+            line == null -> context.getString(R.string.etha_server_auto)
+            else -> line
+        }
     }
 
     fun show(context: Context, subId: String, pinned: Boolean, onPick: (String?) -> Unit, onTest: () -> Unit): AlertDialog {

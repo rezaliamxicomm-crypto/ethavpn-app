@@ -34,14 +34,14 @@
     <color name="md_theme_onErrorContainer">#410002</color>
 
     <!-- Background colors -->
-    <color name="md_theme_background">#FFFFFF</color>
+    <color name="md_theme_background">#F3F4F8</color>
     <color name="md_theme_onBackground">#1C1B1F</color>
 
     <!-- Surface colors -->
     <color name="md_theme_surface">#FFFFFF</color>
     <color name="md_theme_onSurface">#1C1B1F</color>
-    <color name="md_theme_surfaceVariant">#E7E0EC</color>
-    <color name="md_theme_onSurfaceVariant">#49454F</color>
+    <color name="md_theme_surfaceVariant">#EEF2FF</color>
+    <color name="md_theme_onSurfaceVariant">#5B6475</color>
     <color name="md_theme_inverseSurface">#313033</color>
     <color name="md_theme_inverseOnSurface">#F4EFF4</color>
 

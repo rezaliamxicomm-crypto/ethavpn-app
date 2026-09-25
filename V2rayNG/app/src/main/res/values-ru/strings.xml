@@ -530,4 +530,10 @@
     <string name="etha_advanced_v2rayng">Дополнительно (v2rayNG)</string>
     <string name="etha_advanced_v2rayng_hint">Полный клиент. Только для поддержки.</string>
 
+    <string name="etha_tap_to_connect">Нажмите, чтобы подключиться</string>
+    <string name="etha_tap_to_disconnect">Нажмите, чтобы отключиться</string>
+    <string name="etha_days_label">дней осталось</string>
+    <string name="etha_data_label_of">из %s использовано</string>
+    <string name="etha_auto_picked">Авто · %s</string>
+
 </resources>
