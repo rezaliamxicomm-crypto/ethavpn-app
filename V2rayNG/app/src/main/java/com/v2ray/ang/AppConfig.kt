@@ -140,6 +140,7 @@ object AppConfig {
     const val ETHA_BOT_URL = "https://t.me/Ethaconfigbot"
     const val ETHA_RENEW_URL = "$ETHA_BOT_URL?start=app_renew"
     const val ETHA_SUPPORT_URL = "$ETHA_BOT_URL?start=app_support"
+    const val ETHA_PRIVACY_URL = "https://allionapp.com/skyray-privacy"   // the store listing's privacy policy
     const val ETHA_WATCHDOG_INTERVAL_MS = 180_000L           // probe the tunnel every 3 minutes while connected
     const val ETHA_WATCHDOG_FAILURES = 2                     // consecutive failed probes before switching lines
     const val ETHA_DELAY_FRESH_MS = 600_000L                 // real-delay results younger than this are reused on Connect

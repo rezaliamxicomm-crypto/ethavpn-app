@@ -68,6 +68,15 @@
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/layout_privacy"
+            style="@style/EthaSettingsRow">
+            <ImageView style="@style/EthaSettingsIcon" app:srcCompat="@drawable/ic_privacy_24dp" />
+            <LinearLayout style="@style/EthaSettingsText">
+                <TextView style="@style/EthaSettingsTitle" android:text="@string/etha_privacy_policy" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/layout_advanced"
             style="@style/EthaSettingsRow"
             android:visibility="gone">

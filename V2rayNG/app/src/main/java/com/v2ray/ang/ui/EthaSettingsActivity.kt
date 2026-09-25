@@ -11,7 +11,7 @@ import com.v2ray.ang.handler.EthaSubscription
 import com.v2ray.ang.handler.MmkvManager
 
 /**
- * The customer's settings: six rows. Everything v2rayNG exposes stays in the code but is
+ * The customer's settings: seven rows. Everything v2rayNG exposes stays in the code but is
  * reachable only through the `Advanced (v2rayNG)` row, which appears after seven taps on the
  * version line in About (expert mode, for the operator and support).
  */
@@ -38,6 +38,7 @@ class EthaSettingsActivity : BaseActivity() {
         binding.layoutUpdate.setOnClickListener { startActivity(Intent(this, CheckUpdateActivity::class.java)) }
         binding.layoutLogs.setOnClickListener { startActivity(Intent(this, LogcatActivity::class.java)) }
         binding.layoutAbout.setOnClickListener { startActivity(Intent(this, AboutActivity::class.java)) }
+        binding.layoutPrivacy.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_PRIVACY_URL) }
         binding.layoutAdvanced.setOnClickListener { startActivity(Intent(this, MainActivity::class.java)) }
     }
 

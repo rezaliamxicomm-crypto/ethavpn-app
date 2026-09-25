@@ -505,6 +505,7 @@
     <string name="etha_language">زبان</string>
     <string name="etha_send_logs">ارسال گزارش به پشتیبانی</string>
     <string name="etha_send_logs_hint">فقط وقتی پشتیبانی بخواهد</string>
+    <string name="etha_privacy_policy">حریم خصوصی</string>
     <string name="etha_expert_on">حالت حرفه‌ای روشن شد: «پیشرفته (v2rayNG)» در تنظیمات آمد</string>
     <string name="etha_expert_off">حالت حرفه‌ای خاموش شد</string>
     <string name="etha_advanced_v2rayng">پیشرفته (v2rayNG)</string>
