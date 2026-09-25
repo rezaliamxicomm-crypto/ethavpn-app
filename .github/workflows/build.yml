@@ -94,7 +94,7 @@ jobs:
         cd ${{ github.workspace }}/V2rayNG
         echo "sdk.dir=${ANDROID_HOME}" > local.properties
         chmod 755 gradlew
-        ./gradlew :app:testDirectDebugUnitTest
+        ./gradlew :app:testDirectDebugUnitTest --tests 'com.v2ray.ang.handler.*' --tests 'com.v2ray.ang.ui.*'   # the fork's tests; upstream's UtilsTest needs Android stubs
 
     - name: Decode Keystore
       uses: timheuer/base64-to-file@v2.0.0

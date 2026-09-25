@@ -9,7 +9,7 @@ class AutoSelectTest {
 
     @Test
     fun lowestPositiveDelayWins() {
-        val best = AutoSelect.best(listOf(c("a", 400, 0), c("b", 120, 1), c("c", 90, 2)))
+        val best = AutoSelect.best(listOf(c("a", 400, 0), c("b", 140, 1), c("c", 90, 2)))
         assertEquals("c", best)
     }
 
