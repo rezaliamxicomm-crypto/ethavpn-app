@@ -119,7 +119,7 @@ jobs:
         MIN=$(tr -d ' \n' < ${{ github.workspace }}/min_supported.txt 2>/dev/null || echo "$VERSION")
         NOTES=$( (cat ${{ github.workspace }}/RELEASE_NOTES.md 2>/dev/null || true) | head -c 1500 | jq -Rs .)
         ASSETS=$(for f in EthaVPN_*.apk; do
-          abi=$(echo "$f" | sed -E 's/.*_([^_]+)\.apk$/\1/')
+          abi=${f#EthaVPN_${VERSION}_}; abi=${abi%.apk}      # arm64-v8a, armeabi-v7a, x86, x86_64, universal
           printf '{"abi":"%s","name":"%s","size":%s,"sha256":"%s"}\n' "$abi" "$f" "$(stat -c %s "$f")" "$(sha256sum "$f" | cut -d' ' -f1)"
         done | jq -s .)
         jq -n --arg v "$VERSION" --argjson c "$CODE" --arg p "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg m "$MIN" --argjson n "$NOTES" --argjson a "$ASSETS" \
