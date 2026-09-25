@@ -19,7 +19,8 @@
    Publish the fingerprint in the channel once; the server pins it (`/etc/ethavpn-app.fpr`).
 3. **Repository secrets** (Settings → Secrets and variables → Actions): `APP_KEYSTORE_BASE64`
    (the .b64 file's content), `APP_KEYSTORE_PASSWORD`, `APP_KEYSTORE_ALIAS` (`ethavpn`),
-   `APP_KEY_PASSWORD`, `GPG_PRIVATE_KEY` (the armored secret key).
+   `APP_KEY_PASSWORD`, `GPG_PRIVATE_KEY` (the armored secret key), and `GPG_PASSPHRASE` when the
+   GPG key has one (leave it out for a key without a passphrase).
 4. **Deploy key** for the server's working copy (`/opt/ethavpn-app`, remote `github`), like the
    other three repos: `ssh-keygen -t ed25519 -f /root/.ssh/gh-ethavpn-app -N ''`, add the public
    key as a deploy key with write access, alias `gh-ethavpn-app` in `/root/.ssh/config`.

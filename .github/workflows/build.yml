@@ -156,14 +156,19 @@ jobs:
           path: release
 
       - name: Sign APKs and latest.json
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
           printf '%s' "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
           KEY=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
+          # a key with a passphrase: GPG_PASSPHRASE secret; without one the variable is empty
+          PASS_ARGS=()
+          if [ -n "$GPG_PASSPHRASE" ]; then PASS_ARGS=(--pinentry-mode loopback --passphrase-fd 3); fi
           mkdir -p release-files
           for f in release/EthaVPN_*.apk release/latest.json; do
             cp "$f" release-files/
-            gpg --batch --yes --local-user "$KEY" --detach-sign --output "release-files/$(basename "$f").sig" "$f"
+            gpg --batch --yes "${PASS_ARGS[@]}" --local-user "$KEY" --detach-sign --output "release-files/$(basename "$f").sig" "$f" 3<<<"$GPG_PASSPHRASE"
           done
           cp release/signing-cert-sha256.txt release-files/
           gpg --armor --export "$KEY" > release-files/ethavpn-release-key.asc
