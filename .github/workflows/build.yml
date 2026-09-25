@@ -89,19 +89,19 @@ jobs:
         distribution: 'temurin'
         java-version: '21'
 
+    - name: Unit tests (compiles everything; runs before the keystore so a push without secrets still tells)
+      run: |
+        cd ${{ github.workspace }}/V2rayNG
+        echo "sdk.dir=${ANDROID_HOME}" > local.properties
+        chmod 755 gradlew
+        ./gradlew testDirectReleaseUnitTest
+
     - name: Decode Keystore
       uses: timheuer/base64-to-file@v2.0.0
       id: android_keystore
       with:
         fileName: "android_keystore.jks"
         encodedString: ${{ secrets.APP_KEYSTORE_BASE64 }}
-
-    - name: Unit tests
-      run: |
-        cd ${{ github.workspace }}/V2rayNG
-        echo "sdk.dir=${ANDROID_HOME}" > local.properties
-        chmod 755 gradlew
-        ./gradlew testDirectReleaseUnitTest
 
     - name: Build APK
       run: |
