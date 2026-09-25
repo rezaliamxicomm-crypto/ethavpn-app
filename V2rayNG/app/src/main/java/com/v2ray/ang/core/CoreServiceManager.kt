@@ -367,7 +367,7 @@ object CoreServiceManager {
         }
         val results = testLines(service, others)
         val next = AutoSelect.best(others.mapIndexed { i, g -> AutoSelect.Candidate(g, results[g] ?: 0L, i) }) ?: others.first()
-        val name = MmkvManager.decodeServerConfig(next)?.remarks.orEmpty()
+        val name = com.v2ray.ang.ui.ServerPicker.displayName(MmkvManager.decodeServerConfig(next)?.remarks.orEmpty())
         LogUtil.i(AppConfig.TAG, "Watchdog: switching to $name")
         MmkvManager.setSelectServer(next)
         AutoSelect.markTested()

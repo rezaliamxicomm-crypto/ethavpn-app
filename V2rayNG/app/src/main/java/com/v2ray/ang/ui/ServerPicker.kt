@@ -16,23 +16,37 @@ object ServerPicker {
     /** One row of the list; guid null = Auto. */
     data class Row(val guid: String?, val text: String)
 
-    /** Pure: the rows in body order. */
-    fun rows(candidates: List<AutoSelect.Candidate>, nameOf: (String) -> String, auto: String, untested: String, failed: String): List<Row> =
-        listOf(Row(null, auto)) + candidates.map { c ->
+    private val ETHA_NAME = Regex("^EthaVPN-([A-Za-z0-9]+)-[^-]+-(.+?)-(\\d+)$")
+
+    /**
+     * The server names the subscription carries are `EthaVPN-XHTTP-fra-CleanIP1-443`; a customer
+     * needs `CleanIP1 · XHTTP/443`. Anything else is shown as it is.
+     */
+    fun displayName(remarks: String): String {
+        val m = ETHA_NAME.find(remarks.trim()) ?: return remarks
+        val (proto, kind, port) = m.destructured
+        return "$kind · $proto/$port"
+    }
+
+    /** Pure: Auto first, then the lines fastest first (untested, then failed, at the end); the ping leads each row. */
+    fun rows(candidates: List<AutoSelect.Candidate>, nameOf: (String) -> String, auto: String, untested: String, failed: String): List<Row> {
+        val sorted = candidates.sortedWith(compareBy({ if (it.delayMs > 0) 0 else if (it.delayMs == 0L) 1 else 2 }, { it.delayMs }, { it.order }))
+        return listOf(Row(null, auto)) + sorted.map { c ->
             val ping = when {
                 c.delayMs > 0 -> "${c.delayMs} ms"
                 c.delayMs < 0 -> failed
                 else -> untested
             }
-            Row(c.guid, "${nameOf(c.guid)}  ·  $ping")
+            Row(c.guid, "$ping  ·  ${displayName(nameOf(c.guid))}")
         }
+    }
 
     /** What the server field shows: Auto with the line it picked (once one is selected), or the pinned line. */
     fun currentLabel(context: Context, pinned: Boolean): String {
         val guid = MmkvManager.getSelectServer()
         val profile = guid?.let { MmkvManager.decodeServerConfig(it) }
         val delay = guid?.let { MmkvManager.decodeServerAffiliationInfo(it)?.testDelayMillis } ?: 0L
-        val line = profile?.let { if (delay > 0) "${it.remarks} (${delay} ms)" else it.remarks }
+        val line = profile?.let { if (delay > 0) "${displayName(it.remarks)} (${delay} ms)" else displayName(it.remarks) }
         return when {
             !pinned && line == null -> context.getString(R.string.etha_server_auto)
             !pinned -> context.getString(R.string.etha_auto_picked, line)

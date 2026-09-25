@@ -1,1 +1,1 @@
-Auto now picks the lowest ping outright and shows the line it chose. Server list as a dropdown with pings. New look and font.
+Auto re-picks the fastest line after every test and moves over when connected. Short server names with the ping first, fastest on top.

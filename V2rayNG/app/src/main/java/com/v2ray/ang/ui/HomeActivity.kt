@@ -116,6 +116,23 @@ class HomeActivity : HelperBaseActivity() {
                 pendingConnect = false
                 connectWithBest()
             } else {
+                // Auto means the best line of the latest test: re-pick, and move over if connected.
+                val s = sub
+                if (s != null && !isPinned()) {
+                    val best = AutoSelect.pickBest(s.guid)
+                    if (best != null && best != MmkvManager.getSelectServer()) {
+                        MmkvManager.setSelectServer(best)
+                        if (mainViewModel.isRunning.value == true) {
+                            connecting = true
+                            CoreServiceManager.stopVService(this)
+                            lifecycleScope.launch {
+                                delay(700)
+                                connecting = false
+                                startVpnFlow()
+                            }
+                        }
+                    }
+                }
                 render()
             }
         }
@@ -221,7 +238,7 @@ class HomeActivity : HelperBaseActivity() {
         val guid = MmkvManager.getSelectServer()
         val name = guid?.let { MmkvManager.decodeServerConfig(it)?.remarks }.orEmpty()
         if (name.isEmpty()) return ""
-        return getString(R.string.etha_line, name) + (latency?.let { "\n$it" } ?: "")
+        return getString(R.string.etha_line, ServerPicker.displayName(name)) + (latency?.let { "\n$it" } ?: "")
     }
 
     private fun renderAccount(item: SubscriptionItem) {
