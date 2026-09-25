@@ -211,8 +211,7 @@ class HomeActivity : HelperBaseActivity() {
         val guid = MmkvManager.getSelectServer()
         val name = guid?.let { MmkvManager.decodeServerConfig(it)?.remarks }.orEmpty()
         if (name.isEmpty()) return ""
-        return getString(R.string.etha_line, name) + (latency?.let { "
-$it" } ?: "")
+        return getString(R.string.etha_line, name) + (latency?.let { "\n$it" } ?: "")
     }
 
     private fun renderAccount(item: SubscriptionItem) {
