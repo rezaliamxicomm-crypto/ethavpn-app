@@ -166,5 +166,5 @@ if __name__ == "__main__":
         png(RES / f"drawable-{dpi}/ic_stat_name_black.png", *paint(px, "none", "comet_black", canvas=76.0, offset=(-16.0, -18.0)))
     # the TV banner (320x180): the sky across the banner, the comet in the middle
     s = 180 / 108.0
-    png(RES / "mipmap-xhdpi/ic_banner.png", *paint((320, 180), "none", "sky_comet", scale=s, offset=(-(320 / s - 108) / 2, 0.0)))
-    png(RES / "mipmap-xhdpi/ic_banner_foreground.png", *paint((320, 180), "none", "comet", scale=s, offset=(-(320 / s - 108) / 2, 0.0)))
+    png(RES / "mipmap-xhdpi/ic_banner.png", *paint((320, 180), "none", "sky_comet", scale=s, offset=((320 / s - 108) / 2, 0.0)))   # centred: x = px / scale - offset
+    png(RES / "mipmap-xhdpi/ic_banner_foreground.png", *paint((320, 180), "none", "comet", scale=s, offset=((320 / s - 108) / 2, 0.0)))

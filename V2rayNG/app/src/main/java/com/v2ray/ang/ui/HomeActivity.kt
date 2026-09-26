@@ -31,6 +31,7 @@ import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SubscriptionUpdater
+import com.v2ray.ang.handler.Updates
 import com.v2ray.ang.handler.UpdateCheckerManager
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.Utils
@@ -104,7 +105,7 @@ class HomeActivity : HelperBaseActivity() {
             }
             onServerChoiceChanged()
         }
-        binding.tvUpdate.setOnClickListener { startActivity(Intent(this, CheckUpdateActivity::class.java)) }
+        binding.tvUpdate.setOnClickListener { Updates.open(this) }
 
         mainViewModel.isRunning.observe(this) { running ->
             connecting = false
@@ -495,6 +496,7 @@ class HomeActivity : HelperBaseActivity() {
     // ---------------------------------------------------------------- updates
 
     private fun checkForUpdateDaily() {
+        if (Updates.isPlay()) return          // Google Play keeps the app current
         val last = MmkvManager.decodeSettingsLong(AppConfig.PREF_ETHA_LAST_UPDATE_CHECK, 0L)
         if (System.currentTimeMillis() - last < AppConfig.ETHA_UPDATE_CHECK_MS) return
         lifecycleScope.launch {

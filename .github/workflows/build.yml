@@ -1,8 +1,9 @@
-name: Build APK
+name: Build APK and Play bundle
 
-# Every push to main builds and runs the unit tests. A manual run with release_tag = vX.Y.Z
-# also signs the APKs and latest.json with the release GPG key and publishes them as a GitHub
-# release, which ethavpn-app-publish on the server then verifies and serves from /dl/.
+# Every push to main builds (the direct APKs and the Play bundle) and runs the unit tests. A manual
+# run with release_tag = vX.Y.Z also signs the APKs, the bundle and latest.json with the release GPG
+# key and publishes them as a GitHub release: ethavpn-app-publish on the server verifies and serves
+# the APKs from /dl/; SkyRay_<version>_play.aab is what goes into the Google Play Console by hand.
 on:
   workflow_dispatch:
     inputs:
@@ -103,11 +104,11 @@ jobs:
         fileName: "android_keystore.jks"
         encodedString: ${{ secrets.APP_KEYSTORE_BASE64 }}
 
-    - name: Build APK
+    - name: Build the direct APKs and the Play bundle
       run: |
         cd ${{ github.workspace }}/V2rayNG
         ./gradlew licenseDirectReleaseReport
-        ./gradlew assembleRelease -Pandroid.injected.signing.store.file=${{ steps.android_keystore.outputs.filePath }} -Pandroid.injected.signing.store.password=${{ secrets.APP_KEYSTORE_PASSWORD }} -Pandroid.injected.signing.key.alias=${{ secrets.APP_KEYSTORE_ALIAS }} -Pandroid.injected.signing.key.password=${{ secrets.APP_KEY_PASSWORD }}
+        ./gradlew assembleDirectRelease bundlePlayRelease -Pandroid.injected.signing.store.file=${{ steps.android_keystore.outputs.filePath }} -Pandroid.injected.signing.store.password=${{ secrets.APP_KEYSTORE_PASSWORD }} -Pandroid.injected.signing.key.alias=${{ secrets.APP_KEYSTORE_ALIAS }} -Pandroid.injected.signing.key.password=${{ secrets.APP_KEY_PASSWORD }}
 
     - name: Write latest.json and the signing certificate fingerprint
       run: |
@@ -129,6 +130,10 @@ jobs:
         $ANDROID_HOME/build-tools/37.0.0/apksigner verify --print-certs SkyRay_${VERSION}_arm64-v8a.apk \
           | grep -i 'SHA-256' | head -1 | sed -E 's/.*: *//' | tr 'a-f' 'A-F' | sed -E 's/(..)/\1:/g; s/:$//' > signing-cert-sha256.txt
         echo "signing cert sha256: $(cat signing-cert-sha256.txt)"
+        # the Play bundle, next to the APKs (not in latest.json: the server never serves it)
+        cp ${{ github.workspace }}/V2rayNG/app/build/outputs/bundle/playRelease/app-play-release.aab "SkyRay_${VERSION}_play.aab"
+        echo "play bundle sha256: $(sha256sum SkyRay_${VERSION}_play.aab | cut -d' ' -f1)"
+        echo "Play bundle SkyRay_${VERSION}_play.aab SHA-256: \`$(sha256sum SkyRay_${VERSION}_play.aab | cut -d' ' -f1)\`" >> $GITHUB_STEP_SUMMARY
         echo "### EthaVPN $VERSION" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY; cat latest.json >> $GITHUB_STEP_SUMMARY; echo '```' >> $GITHUB_STEP_SUMMARY
         echo "Signing certificate SHA-256: \`$(cat signing-cert-sha256.txt)\`" >> $GITHUB_STEP_SUMMARY
@@ -140,6 +145,7 @@ jobs:
         name: release-files
         path: |
           ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/SkyRay_*.apk
+          ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/SkyRay_*.aab
           ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/latest.json
           ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/signing-cert-sha256.txt
 
@@ -155,7 +161,7 @@ jobs:
           name: release-files
           path: release
 
-      - name: Sign APKs and latest.json
+      - name: Sign the APKs, the Play bundle and latest.json
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
@@ -166,7 +172,7 @@ jobs:
           PASS_ARGS=()
           if [ -n "$GPG_PASSPHRASE" ]; then PASS_ARGS=(--pinentry-mode loopback --passphrase-fd 3); fi
           mkdir -p release-files
-          for f in release/SkyRay_*.apk release/latest.json; do
+          for f in release/SkyRay_*.apk release/SkyRay_*.aab release/latest.json; do
             cp "$f" release-files/
             gpg --batch --yes "${PASS_ARGS[@]}" --local-user "$KEY" --detach-sign --output "release-files/$(basename "$f").sig" "$f" 3<<<"$GPG_PASSPHRASE"
           done

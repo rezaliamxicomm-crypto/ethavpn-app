@@ -29,7 +29,9 @@ download from anywhere else. The APK signing certificate's SHA-256 is in every r
   line in About (`Advanced (v2rayNG)` appears in Settings); nothing else of it is exposed.
 - The app is called **SkyRay** (launcher name, title, notification channel, `SkyRay/<version> (android)`
   User-Agent, `SkyRay_<version>_<abi>.apk` files); the application id is `com.allion.skyray` (the id registered on
-  Google Play; the App Store bundle id is the same). The icon is a
+  Google Play; the App Store bundle id is the same). Two flavors of the same code: `direct` (the
+  /dl/ APKs, in-app updater) and `play` (the Play bundle, no installer permission, `Updates.open()`
+  sends to the listing). The icon is a
   comet over a night sky: vector drawables `ic_launcher_*_skyray` for the adaptive icon, and
   `tools/skyray_icon.py` paints the same design into the fallback PNGs (launcher, status bar, TV banner).
 - First launch with no account: if the clipboard holds one of our links (the landing page copies it when the

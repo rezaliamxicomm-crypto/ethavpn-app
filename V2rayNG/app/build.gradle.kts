@@ -15,8 +15,10 @@ android {
         applicationId = "com.allion.skyray"   // the id registered on Google Play (and the App Store bundle id)
         minSdk = 24
         targetSdk = 37
-        versionCode = 114
-        versionName = "1.1.4"
+        // 4000000 + the build number: the same code in every ABI split and in the Play bundle, so a
+        // phone can move between the direct APK and the Play install (the updater compares versionName).
+        versionCode = 4000115
+        versionName = "1.1.5"
         multiDexEnabled = true
         manifestPlaceholders["subHost"] = "fra.mobileiphone.org"
 
@@ -52,12 +54,18 @@ android {
         }
     }
 
-    // One distribution: the APK from the service's own download page (and the bot).
+    // Two distributions of the same code: direct = the APKs from the service's own download page
+    // and the bot (with the in-app updater); play = the Google Play bundle (updates come from Play,
+    // no installer permission — src/play/AndroidManifest.xml).
     flavorDimensions.add("distribution")
     productFlavors {
         create("direct") {
             dimension = "distribution"
             buildConfigField("String", "DISTRIBUTION", "\"Direct\"")
+        }
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("String", "DISTRIBUTION", "\"Play\"")
         }
     }
 
@@ -81,14 +89,13 @@ android {
 
     applicationVariants.all {
         val variant = this
-        // Every ABI split carries the same versionCode (the updater compares versionName), and
-        // the file names are what latest.json and ethavpn-app-publish expect.
+        // The file names are what latest.json and ethavpn-app-publish expect (every split keeps
+        // the one versionCode from defaultConfig).
         variant.outputs
             .map { it as com.android.build.gradle.internal.api.ApkVariantOutputImpl }
             .forEach { output ->
                 val abi = output.getFilter("ABI") ?: "universal"
                 output.outputFileName = "SkyRay_${variant.versionName}_${abi}.apk"
-                output.versionCodeOverride = 4000000 + variant.versionCode
             }
     }
 

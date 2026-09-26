@@ -11,6 +11,7 @@ import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.EthaSubscription
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.handler.Updates
 import com.v2ray.ang.util.Utils
 
 /**
@@ -38,7 +39,7 @@ class EthaSettingsActivity : BaseActivity() {
             startActivity(Intent(this, PerAppProxyActivity::class.java))
         }
         binding.layoutLanguage.setOnClickListener { pickLanguage() }
-        binding.layoutUpdate.setOnClickListener { startActivity(Intent(this, CheckUpdateActivity::class.java)) }
+        binding.layoutUpdate.setOnClickListener { Updates.open(this) }
         binding.layoutLogs.setOnClickListener { startActivity(Intent(this, LogcatActivity::class.java)) }
         binding.layoutAbout.setOnClickListener { startActivity(Intent(this, AboutActivity::class.java)) }
         binding.layoutPrivacy.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_PRIVACY_URL) }

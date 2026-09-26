@@ -37,7 +37,8 @@
    git tag vX.Y.Z && git push github vX.Y.Z
    ```
    Actions → Build APK → Run workflow → `release_tag` = `vX.Y.Z`. The release gets
-   `SkyRay_X.Y.Z_<abi>.apk` (+ `.sig`), `latest.json` (+ `.sig`), `ethavpn-release-key.asc`,
+   `SkyRay_X.Y.Z_<abi>.apk` (+ `.sig`), `SkyRay_X.Y.Z_play.aab` (+ `.sig`, the Google Play bundle — see
+   below), `latest.json` (+ `.sig`), `ethavpn-release-key.asc`,
    `release-key-fingerprint.txt`, `signing-cert-sha256.txt`.
 4. On the server: `ethavpn-app-publish vX.Y.Z` (verifies the signatures against the pinned key
    and every sha256, installs under `/var/www/html/dl/`, prints the channel post). The bot picks
@@ -45,6 +46,21 @@
 5. First release only: put `signing-cert-sha256.txt`'s value into
    `/var/www/html/.well-known/assetlinks.json` (App Links) — see the server runbook
    (`/opt/staging/app-launch/APPLY.md`, step 5).
+
+## Google Play
+
+Every release also carries `SkyRay_X.Y.Z_play.aab`, the `play` flavor as an Android App Bundle signed
+with the same release key: no in-app updater and no `REQUEST_INSTALL_PACKAGES` (Play's policy), the
+update row opens the Play listing, the same versionCode as the APKs (4000000 + build number) so a phone
+can move between a direct install and a Play install. Nothing on the server touches it: download it from
+the GitHub release page and upload it in the Play Console (Release → a testing track or Production →
+Create new release). Before the **first** upload decide the signing key (Play Console → App integrity →
+App signing): "Export and upload a key from a Java keystore" with the release keystore keeps one
+signature for Play and direct installs (the PEPK tool runs on the operator's machine, never on the
+server); letting Google generate the key means Play installs carry Google's certificate — then add its
+SHA-256 (the App signing page) to `/var/www/html/.well-known/assetlinks.json` next to the release one,
+or the link stops opening the Play-installed app. Listing texts, graphics and the console checklist:
+`store/play/`.
 
 ## Rolling back
 
