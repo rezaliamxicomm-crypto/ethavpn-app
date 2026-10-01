@@ -11,11 +11,12 @@ import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.EthaSubscription
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.handler.RatePrompt
 import com.v2ray.ang.handler.Updates
 import com.v2ray.ang.util.Utils
 
 /**
- * The customer's settings: eight rows. Everything v2rayNG exposes stays in the code but is
+ * The customer's settings: ten rows. Everything v2rayNG exposes stays in the code but is
  * reachable only through the `Advanced (v2rayNG)` row, which appears after seven taps on the
  * version line in About (expert mode, for the operator and support).
  */
@@ -46,6 +47,10 @@ class EthaSettingsActivity : BaseActivity() {
             val text = getString(R.string.etha_share_text, AppConfig.ETHA_PLAY_URL, AppConfig.ETHA_APPSTORE_URL, AppConfig.ETHA_SHARE_URL)
             val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
             startActivity(Intent.createChooser(send, getString(R.string.etha_share_app)))
+        }
+        binding.layoutRate.setOnClickListener {
+            RatePrompt.done()   // the customer went to the store by themselves: the app never asks after this
+            Updates.rate(this)
         }
         binding.layoutAbout.setOnClickListener { startActivity(Intent(this, AboutActivity::class.java)) }
         binding.layoutPrivacy.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_PRIVACY_URL) }

@@ -140,6 +140,10 @@ class EthaSubscriptionTest {
         assertEquals(newLink, EthaSubscription.extractSubLink("👇 Tap the link below, or the button.\n$newLink"))
         // a message with an earlier address gives the link on the current one
         assertEquals(newLink, EthaSubscription.extractSubLink("🔗 https://fra.mobileiphone.org/sub/XXXXXXXXXXXXXX."))
+        // the invisible marks of a right-to-left message around the link (they are not spaces)
+        assertEquals(newLink, EthaSubscription.extractSubLink("‏$newLink‏"))
+        assertEquals(newLink, EthaSubscription.extractSubLink("لینک شما:\n⁨$newLink⁩."))
+        assertEquals(newLink, EthaSubscription.extractSubLink("$newLink‏."))
         assertNull(EthaSubscription.extractSubLink("https://api.mobileiphonez.org/sub/XXXXXXXXXXXXXX"))
         assertNull(EthaSubscription.extractSubLink("nothing here"))
         assertNull(EthaSubscription.extractSubLink(null))

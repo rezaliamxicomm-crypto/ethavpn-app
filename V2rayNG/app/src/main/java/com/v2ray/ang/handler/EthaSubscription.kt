@@ -99,10 +99,13 @@ object EthaSubscription {
         return ta == tokenOf(migratedUrl(b) ?: b)
     }
 
-    /** The link inside pasted text (a Telegram message adds words and punctuation around it); an earlier address comes back on the current one. */
+    // Direction and joining marks a right-to-left message leaves around a copied link: not spaces, never part of a link
+    private const val INVISIBLE = "​‌‍‎‏‪‫‬‭‮⁦⁧⁨⁩﻿"
+
+    /** The link inside pasted text (a Telegram message adds words, punctuation and invisible marks around it); an earlier address comes back on the current one. */
     fun extractSubLink(text: String?): String? =
         text?.split(Regex("\\s+"))
-            ?.map { it.trim().trimEnd('.', ',', ')', ']', '؛', '،') }
+            ?.map { piece -> piece.filterNot { it in INVISIBLE }.trim().trimEnd('.', ',', ')', ']', '؛', '،') }
             ?.firstNotNullOfOrNull { if (isSubLink(it)) it else migratedUrl(it) }
 
     /** Copies what the headers say onto the item. Returns true when at least one known header was present. */

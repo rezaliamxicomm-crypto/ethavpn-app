@@ -2,6 +2,7 @@ package com.v2ray.ang.handler
 
 import android.content.Context
 import android.content.Intent
+import androidx.core.net.toUri
 import com.v2ray.ang.BuildConfig
 import com.v2ray.ang.ui.CheckUpdateActivity
 import com.v2ray.ang.util.Utils
@@ -19,5 +20,16 @@ object Updates {
     fun open(context: Context) {
         if (isPlay()) Utils.openUri(context, PLAY_LISTING)
         else context.startActivity(Intent(context, CheckUpdateActivity::class.java))
+    }
+
+    /** "Rate SkyRay": the listing in the Play app itself, where the stars are; no Play app → the listing in a browser. */
+    fun rate(context: Context) {
+        try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, "market://details?id=${BuildConfig.APPLICATION_ID}".toUri()).setPackage("com.android.vending")
+            )
+        } catch (_: Exception) {
+            Utils.openUri(context, PLAY_LISTING)
+        }
     }
 }

@@ -485,7 +485,11 @@
     <!-- EthaVPN -->
     <string name="etha_empty_title">Almost there</string>
     <string name="etha_empty_hint">👇 Tap Paste link — that\'s all.</string>
-    <string name="etha_clipboard_empty">No link found. In Telegram, tap your link — it opens here.</string>
+    <string name="etha_link_box_title">Add your link</string>
+    <string name="etha_link_box_text">No link was found to paste. Paste or type it here, or open Telegram and tap your link — it opens SkyRay.</string>
+    <string name="etha_link_box_hint">https://…</string>
+    <string name="etha_link_box_add">Add</string>
+    <string name="etha_link_box_telegram">Open Telegram</string>
     <string name="etha_paste_link">Paste link</string>
     <string name="etha_scan_qr">Scan QR code</string>
     <string name="etha_connect">Connect</string>
@@ -535,6 +539,11 @@
     <string name="etha_share_app">Share this app</string>
     <string name="etha_share_app_hint">Send a friend the links to get SkyRay</string>
     <string name="etha_share_text">SkyRay — a simple VPN that works in Iran.\nAndroid: %1$s\niPhone: %2$s\nTelegram: %3$s</string>
+    <string name="etha_rate_app">Rate SkyRay</string>
+    <string name="etha_rate_app_hint">Leave a rating on Google Play</string>
+    <string name="etha_rate_ask">Is SkyRay working well for you? A rating on Google Play takes a few seconds and helps others find it.</string>
+    <string name="etha_rate_do">Rate</string>
+    <string name="etha_rate_later">Not now</string>
     <string name="etha_server">Server</string>
     <string name="etha_servers_count">%d servers</string>
     <string name="etha_show_all">Show all %d ▾</string>

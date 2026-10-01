@@ -43,17 +43,30 @@
                 android:text="@string/etha_scan_qr" />
         </LinearLayout>
 
-        <!-- the hero: the glowing Connect button, the state, the server chip -->
+        <!-- the hero: the glowing Connect button, the state, one line under it. It takes the height the phone has
+             to spare (the weight; the ScrollView fills the viewport), with its block in the middle, so the last
+             button sits at the bottom of the screen on every phone; HomeActivity grows the disc with that height. -->
         <LinearLayout
             android:id="@+id/hero"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_horizontal"
+            android:layout_weight="1"
+            android:clipChildren="false"
+            android:gravity="center"
             android:orientation="vertical"
             android:paddingTop="18dp"
             android:paddingBottom="14dp">
 
+          <LinearLayout
+              android:id="@+id/hero_block"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:clipChildren="false"
+              android:gravity="center_horizontal"
+              android:orientation="vertical">
+
             <FrameLayout
+                android:id="@+id/ring"
                 android:layout_width="204dp"
                 android:layout_height="204dp">
 
@@ -87,12 +100,21 @@
                 android:gravity="center"
                 android:text="@string/etha_state_not_connected" />
 
+            <!-- one of three under the state — the hint, the chip, the spinner — in a slot as tall as the hint's two
+                 lines whatever it shows (the hint goes invisible, never gone): the block keeps its height, so the
+                 Connect button does not move when the state changes -->
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
             <TextView
                 android:id="@+id/tv_connect_hint"
                 style="@style/EthaMuted"
+                android:layout_width="match_parent"
                 android:layout_marginTop="4dp"
-                android:gravity="center"
+                android:gravity="center_horizontal"
                 android:lineSpacingMultiplier="1.35"
+                android:minLines="2"
                 android:textSize="13sp"
                 android:text="@string/etha_tap_to_connect" />
 
@@ -100,6 +122,7 @@
                 android:id="@+id/tv_line"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
                 android:layout_marginTop="8dp"
                 android:background="@drawable/bg_chip"
                 android:drawableStart="@drawable/bg_dot"
@@ -118,12 +141,15 @@
                 android:id="@+id/progress"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
                 android:layout_marginTop="8dp"
                 android:indeterminate="true"
                 android:visibility="gone"
                 app:indicatorColor="@color/etha_blue_light"
                 app:indicatorSize="24dp"
                 app:trackThickness="3dp" />
+            </FrameLayout>
+          </LinearLayout>
         </LinearLayout>
 
         <!-- the server panel: tap → the sheet -->

@@ -482,7 +482,11 @@
     <!-- EthaVPN -->
     <string name="etha_empty_title">Почти готово</string>
     <string name="etha_empty_hint">👇 Нажмите «Вставить ссылку» — и всё.</string>
-    <string name="etha_clipboard_empty">Ссылка не найдена. Нажмите на свою ссылку в Telegram — она откроется здесь.</string>
+    <string name="etha_link_box_title">Добавьте вашу ссылку</string>
+    <string name="etha_link_box_text">Ссылка для вставки не найдена. Вставьте или введите её здесь либо откройте Telegram и нажмите на вашу ссылку — откроется SkyRay.</string>
+    <string name="etha_link_box_hint">https://…</string>
+    <string name="etha_link_box_add">Добавить</string>
+    <string name="etha_link_box_telegram">Открыть Telegram</string>
     <string name="etha_paste_link">Вставить ссылку</string>
     <string name="etha_scan_qr">Сканировать QR-код</string>
     <string name="etha_connect">Подключить</string>
@@ -532,6 +536,11 @@
     <string name="etha_share_app">Поделиться приложением</string>
     <string name="etha_share_app_hint">Отправьте другу ссылки на SkyRay</string>
     <string name="etha_share_text">SkyRay — простой VPN, который работает в Иране.\nAndroid: %1$s\niPhone: %2$s\nTelegram: %3$s</string>
+    <string name="etha_rate_app">Оценить SkyRay</string>
+    <string name="etha_rate_app_hint">Оставьте оценку в Google Play</string>
+    <string name="etha_rate_ask">SkyRay хорошо работает? Оценка в Google Play займёт несколько секунд и поможет другим найти приложение.</string>
+    <string name="etha_rate_do">Оценить</string>
+    <string name="etha_rate_later">Не сейчас</string>
     <string name="etha_server">Сервер</string>
     <string name="etha_servers_count">Серверов: %d</string>
     <string name="etha_show_all">Показать все %d ▾</string>

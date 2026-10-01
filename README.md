@@ -23,8 +23,10 @@ release as `signing-cert-sha256.txt`.
 - `HomeActivity`: one screen — paste / scan / receive the link, Connect, the server choice
   (`Auto (fastest)` by default, or a line picked by hand — `ServerPicker`), account card
   (days, data, notice), Renew, Support.
-- `EthaSettingsActivity`: eight rows — server, apps that bypass the VPN, language, update, send
-  logs, About, privacy policy (opens allionapp.com/skyray-privacy), delete account (wipes the
+- `EthaSettingsActivity`: ten rows — server, apps that bypass the VPN, language, update, send
+  logs, share this app, rate SkyRay (the Play listing; `handler/RatePrompt` also asks by itself in the Play
+  build: the 5th working connection and three days, then ten more and two weeks, three asks at most),
+  About, privacy policy (opens allionapp.com/skyray-privacy), delete account (wipes the
   subscription, its servers and the account data from the phone after a confirmation). The full v2rayNG interface is reachable only after seven taps on the version
   line in About (`Advanced (v2rayNG)` appears in Settings); nothing else of it is exposed.
 - The app is called **SkyRay** (launcher name, title, notification channel, `SkyRay/<version> (android)`

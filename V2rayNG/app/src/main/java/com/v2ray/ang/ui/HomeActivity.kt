@@ -3,18 +3,24 @@ package com.v2ray.ang.ui
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.text.InputType
 import android.text.format.DateUtils
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.widget.EditText
+import android.widget.FrameLayout
 import androidx.core.content.ContextCompat
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import com.v2ray.ang.AppConfig
@@ -32,6 +38,7 @@ import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.AutoSelect
 import com.v2ray.ang.handler.EthaSubscription
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.handler.RatePrompt
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SubscriptionUpdater
@@ -57,6 +64,7 @@ class HomeActivity : HelperBaseActivity() {
         const val EXTRA_TEST = "etha_test"          // Settings asked for a "test again"
         private const val CONNECT_GUARD_MS = 25_000L
         private const val TEST_GUARD_MS = 60_000L
+        private val PROBE_OK = Regex("\\d+\\s*(ms|мс)")   // the probe's answer with a time (en, fa, ru); any other answer is a failure
     }
 
     private val binding by lazy { ActivityHomeBinding.inflate(layoutInflater) }
@@ -70,6 +78,7 @@ class HomeActivity : HelperBaseActivity() {
     private var serverSheet: ServerSheet? = null   // the open server sheet, re-rendered as pings land
     private var pulse: AnimatorSet? = null         // the halo's slow breath while connected
     private var lastProbe: String? = null          // the current server's last probe, for the chip
+    private var rateOnProbe = false                // the customer just connected by hand: this probe decides whether it counts for the rating ask
 
     private val requestVpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (it.resultCode == RESULT_OK) {
@@ -102,14 +111,24 @@ class HomeActivity : HelperBaseActivity() {
         binding.btnSupport.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_SUPPORT_URL) }
         binding.btnTest.setOnClickListener { testAgain() }
         binding.panelServer.setOnClickListener { showServerSheet() }
+        // The hero has the height the phone leaves over (activity_home.xml): the disc with its halo grows with it, up
+        // to 12 % at 160 dp to spare (168 dp, the design's tall-phone hero) — drawn larger, laid out the same, so
+        // nothing else moves; the halo's clear rim is what reaches past its box.
+        binding.hero.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+            val spare = (bottom - top) - binding.hero.paddingTop - binding.hero.paddingBottom - binding.heroBlock.height
+            val grow = 1f + 0.12f * (spare / (160f * resources.displayMetrics.density)).coerceIn(0f, 1f)
+            binding.ring.scaleX = grow
+            binding.ring.scaleY = grow
+        }
         binding.tvUpdate.setOnClickListener { Updates.open(this) }
 
         mainViewModel.isRunning.observe(this) { running ->
+            rateOnProbe = running && connecting   // the customer's own Connect, not the state found on opening
             connecting = false
             render()
             if (running) mainViewModel.testCurrentServerRealPing()
         }
-        mainViewModel.updateTestResultAction.observe(this) { lastProbe = it; renderChip() }
+        mainViewModel.updateTestResultAction.observe(this) { lastProbe = it; renderChip(); countForRating(it) }
         // every ping lands in the panel and the open sheet as it is measured (the results are cleared when a test starts)
         mainViewModel.updateListAction.observe(this) { renderServerPanel(); serverSheet?.render() }
         mainViewModel.testsFinished.observe(this) {
@@ -189,8 +208,8 @@ class HomeActivity : HelperBaseActivity() {
     /** Returns true when the clipboard had text (a link or not) — false means nothing came back. */
     private fun importFromClipboard(): Boolean {
         if (sub != null || connecting || pendingConnect) return true
-        val text = try { Utils.getClipboard(this) } catch (_: Exception) { "" }
-        if (text.isBlank() || text == "null") return false
+        val text = clipboardText()
+        if (text.isBlank()) return false
         val link = EthaSubscription.extractSubLink(text) ?: return true
         // by account, not by text: the deleted link was stored with its "#EthaVPN" name and maybe an old address
         if (link == clipboardTried || EthaSubscription.sameAccount(link, MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_DELETED_LINK))) return true
@@ -228,8 +247,10 @@ class HomeActivity : HelperBaseActivity() {
                 else -> R.string.etha_state_not_connected
             }
         )
-        // the hint under the state: "Tap to connect" + what Auto does; connected, the chip takes its place
-        binding.tvConnectHint.isVisible = !running
+        // One of three under the state, in a slot that keeps the hint's two lines of height (so the Connect button
+        // never moves): the hint ("Tap to connect" + what Auto does), connected the chip, busy the spinner alone.
+        val busy = connecting || pendingConnect
+        binding.tvConnectHint.visibility = if (!running && !busy) View.VISIBLE else View.INVISIBLE
         binding.tvConnectHint.text = if (isPinned()) getString(R.string.etha_tap_to_connect)
             else getString(R.string.etha_tap_to_connect) + "\n" + getString(R.string.etha_auto_hint)
         binding.btnConnect.isEnabled = !connecting && !pendingConnect
@@ -238,7 +259,7 @@ class HomeActivity : HelperBaseActivity() {
         )
         binding.halo.setBackgroundResource(if (running) R.drawable.bg_halo_green else R.drawable.bg_halo_blue)
         pulseHalo(running)
-        binding.progress.isVisible = connecting || pendingConnect
+        binding.progress.isVisible = busy
         renderChip()
         renderServerPanel()
         if (s != null) renderAccount(s.subscription)
@@ -262,7 +283,7 @@ class HomeActivity : HelperBaseActivity() {
     /** The chip under the state while connected: the server and its last probe. */
     private fun renderChip() {
         val text = chipText()
-        binding.tvLine.isVisible = text.isNotEmpty()
+        binding.tvLine.isVisible = text.isNotEmpty() && !connecting && !pendingConnect
         binding.tvLine.text = text
     }
 
@@ -464,14 +485,63 @@ class HomeActivity : HelperBaseActivity() {
     // ---------------------------------------------------------------- the link
 
     private fun pasteLink() {
-        val text = try { Utils.getClipboard(this) } catch (_: Exception) { "" }
-        val link = EthaSubscription.extractSubLink(text)
+        val link = EthaSubscription.extractSubLink(clipboardText())
         if (link == null) {
-            toastError(R.string.etha_clipboard_empty)   // the way back: the link in Telegram opens here
+            askForLink()   // nothing to paste: never a dead end
             return
         }
         clipboardTried = link
         importLink(link)
+    }
+
+    /** Everything on the clipboard as text: every item, a web address or styled text included (Utils.getClipboard reads the first item's plain text only). */
+    private fun clipboardText(): String = try {
+        val clip = (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
+        (0 until (clip?.itemCount ?: 0)).joinToString("\n") { clip?.getItemAt(it)?.coerceToText(this)?.toString().orEmpty() }
+    } catch (_: Exception) {
+        ""
+    }
+
+    /**
+     * Paste found no link on the clipboard (nothing copied it — an install straight from the store or
+     * from the bot's file —, the phone cleared it, or something else was copied since): a box to put the
+     * link in, where the keyboard's own paste works, and "Open Telegram", which brings the bot's message
+     * with the link. The customer who copies the link there and comes back needs no further tap: the
+     * box takes it from the clipboard as soon as it has the screen again.
+     */
+    private fun askForLink() {
+        val input = EditText(this).apply {
+            hint = getString(R.string.etha_link_box_hint)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            maxLines = 4
+        }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val box = FrameLayout(this).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.etha_link_box_title)
+            .setMessage(R.string.etha_link_box_text)
+            .setView(box)
+            .setPositiveButton(R.string.etha_link_box_add, null)   // set below: a text that is not a link keeps the box open
+            .setNeutralButton(R.string.etha_link_box_telegram, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+        fun useLink(link: String) {
+            dialog.dismiss()
+            clipboardTried = link
+            importLink(link)
+        }
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val link = EthaSubscription.extractSubLink(input.text?.toString())
+                if (link == null) input.error = getString(R.string.etha_link_invalid) else useLink(link)
+            }
+            // the box stays open behind Telegram: back with the link copied, it is taken by itself
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener { Utils.openUri(this, AppConfig.ETHA_LINK_URL) }
+            dialog.window?.decorView?.viewTreeObserver?.addOnWindowFocusChangeListener { hasFocus ->
+                if (hasFocus && dialog.isShowing) EthaSubscription.extractSubLink(clipboardText())?.let { useLink(it) }
+            }
+        }
+        dialog.show()
     }
 
     private fun scanLink() {
@@ -558,6 +628,30 @@ class HomeActivity : HelperBaseActivity() {
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------------- the rating ask
+
+    /**
+     * A connection the customer made that works (its probe came back with a time) counts towards the
+     * rating ask; RatePrompt says when one is due — rarely, and never after a failure. The stars
+     * themselves are on the store's page: "Rate" opens it, "Not now" waits for the next round.
+     */
+    private fun countForRating(probe: String?) {
+        if (!rateOnProbe) return
+        rateOnProbe = false
+        if (probe == null || !PROBE_OK.containsMatchIn(probe)) return
+        if (!RatePrompt.connected() || isFinishing || isDestroyed) return
+        RatePrompt.asked()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.etha_rate_app)
+            .setMessage(R.string.etha_rate_ask)
+            .setPositiveButton(R.string.etha_rate_do) { _, _ ->
+                RatePrompt.done()
+                Updates.rate(this)
+            }
+            .setNegativeButton(R.string.etha_rate_later, null)
+            .show()
     }
 
     // ---------------------------------------------------------------- updates

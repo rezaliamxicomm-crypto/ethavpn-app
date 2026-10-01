@@ -1,1 +1,1 @@
-Fixes for the new look: readable server list and icons. Smaller app (code shrinking on), edge-to-edge on every Android version, and the scanner no longer locks the screen orientation.
+Adding your link never gets stuck: when "Paste link" finds nothing to paste, a box opens where you can paste or type the link, or open Telegram to get it. The Home screen now fills tall phones, with no empty band under the last button. New in Settings: Rate SkyRay.

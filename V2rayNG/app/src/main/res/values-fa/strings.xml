@@ -461,7 +461,11 @@
     <!-- EthaVPN -->
     <string name="etha_empty_title">تقریباً تمام است</string>
     <string name="etha_empty_hint">👇 روی «چسباندن لینک» بزنید؛ همین.</string>
-    <string name="etha_clipboard_empty">لینکی پیدا نشد. در تلگرام روی لینک خود بزنید؛ همین‌جا باز می‌شود.</string>
+    <string name="etha_link_box_title">لینک خود را اضافه کنید</string>
+    <string name="etha_link_box_text">لینکی برای چسباندن پیدا نشد. آن را همین‌جا بچسبانید یا بنویسید، یا تلگرام را باز کنید و روی لینک خود بزنید؛ SkyRay باز می‌شود.</string>
+    <string name="etha_link_box_hint">https://…</string>
+    <string name="etha_link_box_add">افزودن</string>
+    <string name="etha_link_box_telegram">باز کردن تلگرام</string>
     <string name="etha_paste_link">چسباندن لینک</string>
     <string name="etha_scan_qr">اسکن کد QR</string>
     <string name="etha_connect">اتصال</string>
@@ -511,6 +515,11 @@
     <string name="etha_share_app">اشتراک‌گذاری این اپ</string>
     <string name="etha_share_app_hint">لینک‌های دریافت SkyRay را برای دوستانتان بفرستید</string>
     <string name="etha_share_text">اسکای‌ری (SkyRay)؛ وی‌پی‌ان ساده‌ای که در ایران کار می‌کند.\nاندروید: %1$s\nآیفون: %2$s\nتلگرام: %3$s</string>
+    <string name="etha_rate_app">امتیاز دادن به SkyRay</string>
+    <string name="etha_rate_app_hint">در Google Play به SkyRay امتیاز بدهید</string>
+    <string name="etha_rate_ask">از SkyRay راضی هستید؟ امتیاز دادن در Google Play چند ثانیه وقت می‌گیرد و به دیگران کمک می‌کند آن را پیدا کنند.</string>
+    <string name="etha_rate_do">امتیاز می‌دهم</string>
+    <string name="etha_rate_later">الان نه</string>
     <string name="etha_server">سرور</string>
     <string name="etha_servers_count">%d سرور</string>
     <string name="etha_show_all">نمایش همه‌ی %d سرور ▾</string>

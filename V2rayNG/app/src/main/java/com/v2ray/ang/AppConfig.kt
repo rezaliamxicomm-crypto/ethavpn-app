@@ -153,6 +153,8 @@ object AppConfig {
     const val ETHA_SUPPORT_URL = "$ETHA_BOT_URL?start=app_support"
     // "Share this app" (Settings): the two stores and the bot, the bot link with its own registry code
     const val ETHA_SHARE_URL = "$ETHA_BOT_URL?start=app_share"
+    // "Open Telegram" in the add-your-link box (Paste found no link): the bot answers with the customer's link message
+    const val ETHA_LINK_URL = "$ETHA_BOT_URL?start=app_link"
     const val ETHA_PLAY_URL = "https://play.google.com/store/apps/details?id=com.allion.skyray"
     const val ETHA_APPSTORE_URL = "https://apps.apple.com/app/id6809038308"
     const val ETHA_PRIVACY_URL = "https://allionapp.com/skyray-privacy"   // the store listing's privacy policy
@@ -165,6 +167,13 @@ object AppConfig {
     const val PREF_ETHA_LAST_TEST = "pref_etha_last_test"
     const val PREF_ETHA_LAST_UPDATE_CHECK = "pref_etha_last_update_check"
     const val PREF_ETHA_DELETED_LINK = "pref_etha_deleted_link"   // "Delete account" removed it: never imported from the clipboard by itself again
+    // The rating ask (handler/RatePrompt): the phone's, not the account's — "Delete account" leaves them
+    const val PREF_ETHA_RATE_CONNECTS = "pref_etha_rate_connects"            // connections that worked, made by hand
+    const val PREF_ETHA_RATE_FIRST_AT = "pref_etha_rate_first_at"            // when the first of them was
+    const val PREF_ETHA_RATE_ASKS = "pref_etha_rate_asks"                    // how many times the app has asked
+    const val PREF_ETHA_RATE_LAST_ASK_AT = "pref_etha_rate_last_ask_at"
+    const val PREF_ETHA_RATE_LAST_ASK_CONNECTS = "pref_etha_rate_last_ask_connects"
+    const val PREF_ETHA_RATE_DONE = "pref_etha_rate_done"                    // the customer went to the store to rate: never asked again
     const val DELAY_TEST_URL = "https://www.gstatic.com/generate_204"
     const val DELAY_TEST_URL2 = "https://www.google.com/generate_204"
 

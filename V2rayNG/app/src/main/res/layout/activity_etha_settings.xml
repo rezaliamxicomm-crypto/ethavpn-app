@@ -69,6 +69,16 @@
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/layout_rate"
+            style="@style/EthaSettingsRow">
+            <ImageView style="@style/EthaSettingsIcon" app:srcCompat="@drawable/ic_star_24dp" />
+            <LinearLayout style="@style/EthaSettingsText">
+                <TextView style="@style/EthaSettingsTitle" android:text="@string/etha_rate_app" />
+                <TextView style="@style/EthaSettingsSummary" android:text="@string/etha_rate_app_hint" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/layout_about"
             style="@style/EthaSettingsRow">
             <ImageView style="@style/EthaSettingsIcon" app:srcCompat="@drawable/ic_about_24dp" />

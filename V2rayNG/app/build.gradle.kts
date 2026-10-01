@@ -17,8 +17,8 @@ android {
         targetSdk = 37
         // 4000000 + the build number: the same code in every ABI split and in the Play bundle, so a
         // phone can move between the direct APK and the Play install (the updater compares versionName).
-        versionCode = 4000133
-        versionName = "1.3.3"
+        versionCode = 4000135
+        versionName = "1.3.5"
         multiDexEnabled = true
         manifestPlaceholders["subHost"] = "fra.skyrayconfig.org"   // AppConfig.ETHA_SUB_HOST: the only link address
 
