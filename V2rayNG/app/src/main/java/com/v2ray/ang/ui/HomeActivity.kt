@@ -364,7 +364,7 @@ class HomeActivity : HelperBaseActivity() {
         when {
             item.total < 0 -> { binding.tvData.text = "–"; binding.tvDataLabel.text = getString(R.string.etha_data_unknown) }
             item.total == 0L -> { binding.tvData.text = used; binding.tvDataLabel.text = getString(R.string.etha_data_unlimited) }
-            else -> { binding.tvData.text = used; binding.tvDataLabel.text = getString(R.string.etha_data_label_of, fmtBytes(item.total)) }
+            else -> { binding.tvData.text = used; binding.tvDataLabel.text = getString(R.string.etha_data_label_of, EthaSubscription.quotaText(item.total)) }
         }
         binding.dataBar.isVisible = item.total > 0
         if (item.total > 0) {

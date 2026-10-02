@@ -7,6 +7,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Locale
 
 class EthaSubscriptionTest {
 
@@ -201,5 +202,17 @@ class EthaSubscriptionTest {
         assertFalse(EthaSubscription.isStale(now, now))
         assertEquals(180L, AppConfig.ETHA_SUB_UPDATE_MINUTES)                 // = the API's 3 h
         assertEquals(180L, EthaSubscription.updateIntervalMinutes("3"))
+    }
+
+    @Test
+    fun quotaTextDropsTheDecimalOfAWholeNumber() {
+        val gb = 1L shl 30
+        assertEquals("120 GB", EthaSubscription.quotaText(120 * gb, Locale.US))
+        assertEquals("70.2 GB", EthaSubscription.quotaText((70.2 * gb).toLong(), Locale.US))
+        assertEquals("120 GB", EthaSubscription.quotaText(120 * gb - 1, Locale.US))      // 119.99… reads 120, never 120.0
+        assertEquals("1 GB", EthaSubscription.quotaText(gb, Locale.US))
+        assertEquals("1.5 GB", EthaSubscription.quotaText(gb + gb / 2, Locale.US))
+        assertEquals("205 MB", EthaSubscription.quotaText(214748365L, Locale.US))        // the trial's 0.2 GB
+        assertEquals("512 KB", EthaSubscription.quotaText(512 * 1024L, Locale.US))
     }
 }

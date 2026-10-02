@@ -4,6 +4,7 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.dto.entities.SubscriptionCache
 import com.v2ray.ang.dto.entities.SubscriptionItem
 import java.net.URI
+import java.util.Locale
 
 /**
  * The EthaVPN subscription: what the service's /sub/<token> link looks like, what its response
@@ -57,6 +58,19 @@ object EthaSubscription {
         expire < 0 -> null
         expire == 0L -> Long.MAX_VALUE
         else -> maxOf(0L, (expire - nowSec + 86399) / 86400)
+    }
+
+    /**
+     * The allowance on the data tile: "120 GB", "70.2 GB" — one decimal, dropped when it would be ".0" (the
+     * used figure beside it keeps its decimal); under 1 GB whole MB, then KB.
+     */
+    fun quotaText(bytes: Long, locale: Locale = Locale.getDefault()): String = when {
+        bytes >= 1L shl 30 -> {
+            val tenths = Math.round(bytes / 1073741824.0 * 10)
+            String.format(locale, if (tenths % 10 == 0L) "%.0f GB" else "%.1f GB", tenths / 10.0)
+        }
+        bytes >= 1L shl 20 -> String.format(locale, "%.0f MB", bytes / 1048576.0)
+        else -> String.format(locale, "%.0f KB", bytes / 1024.0)
     }
 
     /** Whether a subscription fetched at `lastUpdated` (ms; ≤ 0 = never) is due for a quiet refresh. */
