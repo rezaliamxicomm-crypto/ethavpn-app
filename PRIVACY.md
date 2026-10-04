@@ -8,10 +8,13 @@ sends nothing to the developers.
 
 What leaves your phone because the service cannot work without it:
 
-- The subscription link you added is fetched from the EthaVPN server (at most every 12 hours,
-  or when you tap Refresh). That request carries the app's name and version
-  (`EthaVPN/<version> (android)`). The server records the time of the last fetch per
-  subscription so that support can tell whether your app has ever received the servers.
+- The subscription link you added is fetched from the EthaVPN server (every few hours, and
+  when you tap Refresh). That request carries the app's name and version
+  (`SkyRay/<version> (android)`). The server records the time of the last fetch per
+  subscription so that support can tell whether your app has ever received the servers. The
+  link is fetched with Encrypted Client Hello, so its address is not visible on the way; for
+  that the app asks three public DNS services (Google, Cloudflare, Quad9) for Cloudflare's
+  public encryption key — a question that names Cloudflare, not you and not your link.
 - Your VPN traffic goes to the EthaVPN servers. What the servers keep is described by the
   service, not by this app; the app adds nothing to it.
 - Once a day the app asks the EthaVPN download page whether a newer version exists. That
@@ -31,9 +34,12 @@ its source is public and every release is signed.
 
 آنچه از گوشی شما خارج می‌شود چون سرویس بدون آن کار نمی‌کند:
 
-- لینک اشتراکی که اضافه کرده‌اید حداکثر هر ۱۲ ساعت (یا با زدن بروزرسانی) از سرور EthaVPN گرفته
+- لینک اشتراکی که اضافه کرده‌اید هر چند ساعت (و با زدن بروزرسانی) از سرور EthaVPN گرفته
   می‌شود. این درخواست نام و نسخه‌ی برنامه را همراه دارد. سرور زمان آخرین دریافت هر اشتراک را نگه
-  می‌دارد تا پشتیبانی بداند برنامه‌ی شما سرورها را گرفته است یا نه.
+  می‌دارد تا پشتیبانی بداند برنامه‌ی شما سرورها را گرفته است یا نه. لینک با Encrypted Client Hello
+  گرفته می‌شود تا نشانی آن در مسیر دیده نشود؛ برای این کار برنامه کلید عمومی Cloudflare را از سه
+  سرویس DNS عمومی — گوگل، Cloudflare و Quad9 — می‌پرسد، پرسشی که نام Cloudflare را دارد، نه شما
+  و نه لینک شما.
 - ترافیک VPN شما به سرورهای EthaVPN می‌رود. آنچه سرورها نگه می‌دارند را سرویس توضیح می‌دهد، نه
   این برنامه؛ برنامه چیزی به آن اضافه نمی‌کند.
 - روزی یک بار برنامه از صفحه‌ی دانلود EthaVPN می‌پرسد نسخه‌ی تازه‌تری هست یا نه. این درخواست هیچ
