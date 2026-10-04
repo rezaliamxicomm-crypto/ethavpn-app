@@ -577,7 +577,12 @@ object AngConfigManager {
                 UrlContentResponse("")
             }
             if (response.body.isEmpty()) {
-                response = try {
+                response = if (EthaSubscription.isSubLink(url)) {
+                    // Our link host is filtered by its name inside Iran: it is fetched with Encrypted Client Hello
+                    // enforced (EthaEchFetch), and never with the name in the clear — no plain fetch, whatever
+                    // happened above.
+                    EthaEchFetch.fetch(url, it.guid, userAgent) ?: UrlContentResponse("")
+                } else try {
                     HttpUtil.getUrlContentWithHeaders(
                         UrlContentRequest(
                             url = url,

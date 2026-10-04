@@ -73,21 +73,58 @@ jobs:
       run: |
         cp -r ${{ github.workspace }}/libs ${{ github.workspace }}/V2rayNG/app
 
-    - name: Fetch AndroidLibXrayLite tag
-      run: |
-        pushd AndroidLibXrayLite
-        CURRENT_TAG=$(git describe --tags --abbrev=0)
-        echo "Current tag in this repo: $CURRENT_TAG"
-        echo "CURRENT_TAG=$CURRENT_TAG" >> $GITHUB_ENV
-        popd
-
-    - name: Download libv2ray
-      uses: robinraju/release-downloader@v1.13
+    # The core library is built here from the AndroidLibXrayLite submodule (the commit it pins, which was
+    # upstream's prebuilt libv2ray.aar before) with one file of ours added, libv2ray-ech/echfetch.go: the
+    # subscription fetch with Encrypted Client Hello (libv2ray-ech/README.md). Cached by the submodule commit,
+    # that directory's content and the NDK, so it is rebuilt only when one of them changes (about ten minutes).
+    - name: Setup Go (the core library's own version)
+      uses: actions/setup-go@v6
       with:
-        repository: '2dust/AndroidLibXrayLite'
-        tag: ${{ env.CURRENT_TAG }}
-        fileName: 'libv2ray.aar'
-        out-file-path: V2rayNG/app/libs/
+        go-version-file: AndroidLibXrayLite/go.mod
+        cache-dependency-path: AndroidLibXrayLite/go.sum
+
+    - name: Test the ECH fetch (standard library only, in a scratch module)
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/echmod" && cp libv2ray-ech/*.go "$RUNNER_TEMP/echmod/"
+        cd "$RUNNER_TEMP/echmod"
+        printf 'module example.invalid/libv2ray\n\ngo 1.24\n' > go.mod   # the fetch needs Go 1.23 or newer
+        gofmt -l . | tee /dev/stderr | { ! grep -q .; }
+        go vet ./... && go test -count=1 ./...
+
+    - name: Restore cached libv2ray
+      id: cache-libv2ray-restore
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ github.workspace }}/V2rayNG/app/libs/libv2ray.aar
+        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('libv2ray-ech/*.go') }}
+
+    - name: Build libv2ray from the submodule with the ECH fetch
+      if: steps.cache-libv2ray-restore.outputs.cache-hit != 'true'
+      env:
+        ANDROID_NDK_HOME: ${{ env.NDK_HOME }}
+      run: |
+        set -euo pipefail
+        cp libv2ray-ech/echfetch.go AndroidLibXrayLite/
+        cd AndroidLibXrayLite
+        go install golang.org/x/mobile/cmd/gomobile@latest
+        export PATH="$PATH:$(go env GOPATH)/bin"
+        # upstream's own recipe (its .github/workflows/main.yml): the geo files into assets/, then bind
+        mkdir -p assets data
+        bash gen_assets.sh download
+        cp -v data/*.dat assets/
+        gomobile init
+        go mod tidy
+        mkdir -p ../V2rayNG/app/libs
+        gomobile bind -v -androidapi 24 -trimpath -ldflags='-s -w -buildid= -checklinkname=0' -o ../V2rayNG/app/libs/libv2ray.aar ./
+        unzip -l ../V2rayNG/app/libs/libv2ray.aar | grep -E 'classes.jar|libgojni.so|geoip.dat|geosite.dat'
+
+    - name: Save libv2ray
+      if: steps.cache-libv2ray-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ github.workspace }}/V2rayNG/app/libs/libv2ray.aar
+        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('libv2ray-ech/*.go') }}
 
     - name: Setup Java
       uses: actions/setup-java@v5

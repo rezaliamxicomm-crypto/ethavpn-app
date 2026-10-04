@@ -53,6 +53,12 @@ release as `signing-cert-sha256.txt`.
   before install (`UpdateCheckerManager`, `CheckUpdateActivity`); no other address, no GitHub fallback.
 - Defaults for Iran: the Iran routing preset, Iranian geo files, a domestic resolver for the
   direct-routed traffic, no fragment, no mux.
+- The subscription is fetched with Encrypted Client Hello (`EthaEchFetch`, `libv2ray-ech/`): the link
+  host is filtered by its name inside Iran, so the app never states that name in the clear. The ECH key
+  comes from the host's HTTPS DNS record over plain UDP, or from a pinned key the server's retry key
+  refreshes; the connection goes to a Cloudflare address the app already knows, never to the host's A
+  record; when ECH is not accepted nothing is sent. Through the running tunnel the link is fetched as
+  before. CI builds `libv2ray.aar` from the `AndroidLibXrayLite` submodule with that file added.
 
 Everything else is upstream v2rayNG 2.2.6. Rebases onto newer upstream releases are expected;
 keep the diff small.
@@ -62,7 +68,10 @@ keep the diff small.
 GitHub Actions builds every push to `main` and runs the unit tests
 (`.github/workflows/build.yml`); a manual run with `release_tag` makes a release. Locally:
 Android Studio or `./gradlew assembleDirectRelease` inside `V2rayNG/` after placing
-`libv2ray.aar` in `V2rayNG/app/libs/` and running `compile-hevtun.sh` (needs the NDK).
+`libv2ray.aar` in `V2rayNG/app/libs/` and running `compile-hevtun.sh` (needs the NDK). That
+`libv2ray.aar` is the `AndroidLibXrayLite` submodule built with `libv2ray-ech/echfetch.go` copied in
+(the workflow's recipe; upstream's prebuilt file lacks `fetchSubscriptionEch`, so the app does not
+compile against it).
 `docs/RELEASE.md` describes a release end to end.
 
 ## Privacy

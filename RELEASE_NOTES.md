@@ -1,1 +1,1 @@
-Adding your link never gets stuck: when "Paste link" finds nothing to paste, a box opens where you can paste or type the link, or open Telegram to get it. The Home screen now fills tall phones, with no empty band under the last button. New in Settings: Rate SkyRay.
+Your subscription now refreshes even where its link address is filtered: the app hides that address inside the connection (Encrypted Client Hello) and never sends it in the clear. Nothing to do on your side; refreshing simply works in more places.
