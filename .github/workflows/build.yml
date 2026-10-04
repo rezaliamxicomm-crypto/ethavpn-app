@@ -18,6 +18,7 @@ on:
   push:
     branches:
       - main
+      - 'claude/**'   # work in progress, pushed from the server, which cannot start a run by hand: built and tested, never released
 
 permissions:
   contents: write
@@ -74,9 +75,9 @@ jobs:
         cp -r ${{ github.workspace }}/libs ${{ github.workspace }}/V2rayNG/app
 
     # The core library is built here from the AndroidLibXrayLite submodule (the commit it pins, which was
-    # upstream's prebuilt libv2ray.aar before) with one file of ours added, libv2ray-ech/echfetch.go: the
-    # subscription fetch with Encrypted Client Hello (libv2ray-ech/README.md). Cached by the submodule commit,
-    # that directory's content and the NDK, so it is rebuilt only when one of them changes (about ten minutes).
+    # upstream's prebuilt libv2ray.aar before) with one file of ours added, echfetch/echfetch.go: the
+    # subscription fetch with Encrypted Client Hello (echfetch/README.md). Cached by the submodule commit,
+    # that file's content and the NDK, so it is rebuilt only when one of them changes (about three minutes).
     - name: Setup Go (the core library's own version)
       uses: actions/setup-go@v6
       with:
@@ -86,18 +87,22 @@ jobs:
     - name: Test the ECH fetch (standard library only, in a scratch module)
       run: |
         set -euo pipefail
-        mkdir -p "$RUNNER_TEMP/echmod" && cp libv2ray-ech/*.go "$RUNNER_TEMP/echmod/"
+        mkdir -p "$RUNNER_TEMP/echmod" && cp echfetch/*.go "$RUNNER_TEMP/echmod/"
         cd "$RUNNER_TEMP/echmod"
         printf 'module example.invalid/libv2ray\n\ngo 1.24\n' > go.mod   # the fetch needs Go 1.23 or newer
-        gofmt -l . | tee /dev/stderr | { ! grep -q .; }
-        go vet ./... && go test -count=1 ./...
+        {
+          gofmt -l . | tee /dev/stderr | { ! grep -q .; }
+          go vet ./...
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go vet ./...            # the iOS app compiles the same files
+          go test -count=1 ./...
+        } 2>&1 | tee "$RUNNER_TEMP/go-test.log"
 
     - name: Restore cached libv2ray
       id: cache-libv2ray-restore
       uses: actions/cache/restore@v6
       with:
         path: ${{ github.workspace }}/V2rayNG/app/libs/libv2ray.aar
-        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('libv2ray-ech/*.go') }}
+        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('echfetch/echfetch.go') }}
 
     - name: Build libv2ray from the submodule with the ECH fetch
       if: steps.cache-libv2ray-restore.outputs.cache-hit != 'true'
@@ -105,7 +110,7 @@ jobs:
         ANDROID_NDK_HOME: ${{ env.NDK_HOME }}
       run: |
         set -euo pipefail
-        cp libv2ray-ech/echfetch.go AndroidLibXrayLite/
+        cp echfetch/echfetch.go AndroidLibXrayLite/
         cd AndroidLibXrayLite
         go install golang.org/x/mobile/cmd/gomobile@latest
         export PATH="$PATH:$(go env GOPATH)/bin"
@@ -124,7 +129,7 @@ jobs:
       uses: actions/cache/save@v6
       with:
         path: ${{ github.workspace }}/V2rayNG/app/libs/libv2ray.aar
-        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('libv2ray-ech/*.go') }}
+        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('echfetch/echfetch.go') }}
 
     - name: Setup Java
       uses: actions/setup-java@v5
@@ -137,7 +142,35 @@ jobs:
         cd ${{ github.workspace }}/V2rayNG
         echo "sdk.dir=${ANDROID_HOME}" > local.properties
         chmod 755 gradlew
-        ./gradlew :app:testDirectDebugUnitTest --tests 'com.v2ray.ang.handler.*' --tests 'com.v2ray.ang.ui.*'   # the fork's tests; upstream's UtilsTest needs Android stubs
+        set -o pipefail
+        ./gradlew :app:testDirectDebugUnitTest --tests 'com.v2ray.ang.handler.*' --tests 'com.v2ray.ang.ui.*' 2>&1 | tee "$RUNNER_TEMP/unit-test.log"   # the fork's tests; upstream's UtilsTest needs Android stubs
+
+    # The server that writes this code cannot compile it or read a job's log (that needs a GitHub login): when the Go
+    # tests, the compile or the unit tests fail, their error lines go into a comment on the commit, which anyone can
+    # read. Nothing after this point is reported that way — the later steps have the signing passwords on their lines.
+    - name: Report a failed test or compile where it can be read without logging in
+      if: failure()
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set +e
+        {
+          echo "## Build ${{ github.run_number }} failed"
+          echo
+          echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -f "$RUNNER_TEMP/go-test.log" ]; then
+            echo; echo "### Go tests (echfetch)"; echo '```'
+            grep -E "FAIL|panic:|\.go:[0-9]+|^ok|vet:" "$RUNNER_TEMP/go-test.log" | head -60
+            echo '```'
+          fi
+          if [ -f "$RUNNER_TEMP/unit-test.log" ]; then
+            echo; echo "### Compile and unit tests"; echo '```'
+            grep -E "^e: |^w: .*deprecat|error:|FAILED|AssertionError|Exception|expected:<|What went wrong|BUILD (SUCCESSFUL|FAILED)|tests? completed" "$RUNNER_TEMP/unit-test.log" \
+              | sed "s#file://$GITHUB_WORKSPACE/##g; s#$GITHUB_WORKSPACE/##g" | head -80
+            echo '```'
+          fi
+        } > "$RUNNER_TEMP/comment.md"
+        gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@"$RUNNER_TEMP/comment.md" > /dev/null && echo "commit comment posted"
 
     - name: Decode Keystore
       uses: timheuer/base64-to-file@v2.0.0

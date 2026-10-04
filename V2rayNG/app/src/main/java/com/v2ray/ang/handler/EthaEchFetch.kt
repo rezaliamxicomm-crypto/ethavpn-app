@@ -9,25 +9,39 @@ import com.v2ray.ang.util.LogUtil
 import libv2ray.Libv2ray
 
 /**
- * Fetches one of our links with Encrypted Client Hello enforced. The link host is filtered by its name
- * inside Iran: a request that states the name in the clear is cut, one that hides it with ECH passes. So
- * our link is never fetched with the name in the clear — when ECH is not possible the fetch fails and the
- * next refresh tries again.
+ * Fetches one of our links, the only way it is ever fetched: with Encrypted Client Hello enforced. The link
+ * host's name is never stated in the clear — when ECH is not possible the fetch fails and the next refresh
+ * tries again.
  *
- * The work is the core's (libv2ray's FetchSubscriptionEch, from libv2ray-ech/ in this repo): the key from
- * the host's HTTPS DNS record over plain UDP, or the pinned key with the server's retry key; a connection
- * to a Cloudflare address the app already knows, never to the host's A record. This object only decides
- * which addresses to offer and reads the answer. The pure functions are covered by JVM unit tests.
+ * Two ways out, ECH on both: first on the phone's own network (the app is not inside its own VPN, so this
+ * does not depend on the tunnel), the key asked over plain UDP DNS; when that gives nothing, through the
+ * running tunnel's local proxy, with the key the app carries (no UDP travels through that proxy).
+ *
+ * The work is the core's (libv2ray's FetchSubscriptionEch, from echfetch/ in this repo): the key from DNS or
+ * the pinned one with the server's retry key; a connection to a Cloudflare address the app already knows,
+ * never to the host's A record. This object decides which addresses to offer and reads the answer. The pure
+ * functions are covered by JVM unit tests.
  */
 object EthaEchFetch {
     private const val TIMEOUT_MS = 20_000L
+    private const val TUNNEL_TIMEOUT_MS = 15_000L
 
-    /** Dead addresses cost a dial timeout each before the record's hints get their turn. */
+    /** Dead addresses cost a dial timeout each before the pinned ones get their turn. */
     const val MAX_STORED_ADDRESSES = 3
+
+    /** The tunnel's local proxy, for the fetch that goes through it. */
+    data class TunnelProxy(val address: String, val user: String? = null, val password: String? = null)
 
     /** The body and headers of `url`, fetched with ECH; null when that did not succeed (the reason is in the log). */
     fun fetch(url: String, subscriptionId: String?, userAgent: String?): UrlContentResponse? {
-        val request = buildRequest(url, storedAddresses(subscriptionId), userAgent)
+        val stored = storedAddresses(subscriptionId)
+        val direct = call(buildRequest(url, stored, userAgent), "on the phone's network")
+        if (answered(direct)) return toResponse(direct)   // the server answered, whatever it said: through the tunnel it says the same
+        val proxy = TunnelProxy("127.0.0.1:${SettingsManager.getHttpPort()}", SettingsManager.getSocksUsername(), SettingsManager.getSocksPassword())
+        return toResponse(call(buildRequest(url, stored, userAgent, proxy), "through the tunnel"))
+    }
+
+    private fun call(request: EchFetchRequest, way: String): EchFetchResult? {
         val raw = try {
             Libv2ray.fetchSubscriptionEch(JsonUtil.toJson(request))
         } catch (e: UnsatisfiedLinkError) {
@@ -38,24 +52,31 @@ object EthaEchFetch {
             return null
         }
         val result = JsonUtil.fromJsonSafe(raw, EchFetchResult::class.java)
-        val response = toResponse(result)
-        if (response == null) {
-            LogUtil.w(AppConfig.TAG, "ECH fetch gave no subscription: ${describe(result)}")
+        if (toResponse(result) == null) {
+            LogUtil.w(AppConfig.TAG, "ECH fetch $way gave no subscription: ${describe(result)}")
         } else {
-            LogUtil.i(AppConfig.TAG, "Subscription fetched with ECH via ${result?.address} (key: ${result?.keySource})")
+            LogUtil.i(AppConfig.TAG, "Subscription fetched with ECH $way via ${result?.address} (key: ${result?.keySource})")
         }
-        return response
+        return result
     }
 
-    /** Pure: the request the core gets. */
-    fun buildRequest(url: String, stored: List<String>, userAgent: String?): EchFetchRequest = EchFetchRequest(
+    /** Pure: the server itself answered, with ECH — any status. Only a fetch that reached nobody is worth a second way. */
+    fun answered(result: EchFetchResult?): Boolean =
+        result != null && result.error.isNullOrEmpty() && result.echAccepted && result.status > 0
+
+    /** Pure: the request the core gets — for the phone's own network, or with [proxy] for the way through the tunnel. */
+    fun buildRequest(url: String, stored: List<String>, userAgent: String?, proxy: TunnelProxy? = null): EchFetchRequest = EchFetchRequest(
         url = url,
         addresses = candidateAddresses(stored),
         pinnedAddresses = AppConfig.ETHA_ECH_ADDRESSES,
         resolvers = AppConfig.ETHA_ECH_RESOLVERS,
+        lookupName = AppConfig.ETHA_ECH_LOOKUP_NAME,
         pinnedKey = AppConfig.ETHA_ECH_PINNED_KEY,
         userAgent = userAgent?.trim()?.takeIf { it.isNotEmpty() } ?: AppConfig.ETHA_USER_AGENT,
-        timeoutMs = TIMEOUT_MS,
+        timeoutMs = if (proxy == null) TIMEOUT_MS else TUNNEL_TIMEOUT_MS,
+        proxy = proxy?.address.orEmpty(),
+        proxyUser = proxy?.user.orEmpty(),
+        proxyPassword = proxy?.password.orEmpty(),
     )
 
     /** Pure: the stored lines' IPv4 addresses in the order given (the selected line's first), no repeats, at most [MAX_STORED_ADDRESSES]. */

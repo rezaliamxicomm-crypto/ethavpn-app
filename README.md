@@ -53,23 +53,25 @@ release as `signing-cert-sha256.txt`.
   before install (`UpdateCheckerManager`, `CheckUpdateActivity`); no other address, no GitHub fallback.
 - Defaults for Iran: the Iran routing preset, Iranian geo files, a domestic resolver for the
   direct-routed traffic, no fragment, no mux.
-- The subscription is fetched with Encrypted Client Hello (`EthaEchFetch`, `libv2ray-ech/`): the link
-  host is filtered by its name inside Iran, so the app never states that name in the clear. The ECH key
-  comes from the host's HTTPS DNS record over plain UDP, or from a pinned key the server's retry key
-  refreshes; the connection goes to a Cloudflare address the app already knows, never to the host's A
-  record; when ECH is not accepted nothing is sent. Through the running tunnel the link is fetched as
-  before. CI builds `libv2ray.aar` from the `AndroidLibXrayLite` submodule with that file added.
+- Our own link is fetched in one way only: with Encrypted Client Hello enforced (`EthaEchFetch`,
+  `echfetch/`) — the link host's name is never stated in the clear, and when ECH is not possible the
+  link is not fetched. The ECH key is asked over plain UDP DNS of public resolvers (the HTTPS record
+  of the ECH public name), or is the pinned key, which the server's retry key refreshes; the
+  connection goes to a Cloudflare address the app already knows, never to the host's A record. First
+  on the phone's own network, then through the running tunnel's local proxy — ECH on both. CI builds
+  `libv2ray.aar` from the `AndroidLibXrayLite` submodule with `echfetch/echfetch.go` added.
 
 Everything else is upstream v2rayNG 2.2.6. Rebases onto newer upstream releases are expected;
 keep the diff small.
 
 ## Building
 
-GitHub Actions builds every push to `main` and runs the unit tests
-(`.github/workflows/build.yml`); a manual run with `release_tag` makes a release. Locally:
+GitHub Actions builds every push to `main` (and to a `claude/…` work branch) and runs the unit
+tests (`.github/workflows/build.yml`); a manual run with `release_tag` makes a release. A failed
+test or compile leaves its error lines as a comment on the commit. Locally:
 Android Studio or `./gradlew assembleDirectRelease` inside `V2rayNG/` after placing
 `libv2ray.aar` in `V2rayNG/app/libs/` and running `compile-hevtun.sh` (needs the NDK). That
-`libv2ray.aar` is the `AndroidLibXrayLite` submodule built with `libv2ray-ech/echfetch.go` copied in
+`libv2ray.aar` is the `AndroidLibXrayLite` submodule built with `echfetch/echfetch.go` copied in
 (the workflow's recipe; upstream's prebuilt file lacks `fetchSubscriptionEch`, so the app does not
 compile against it).
 `docs/RELEASE.md` describes a release end to end.

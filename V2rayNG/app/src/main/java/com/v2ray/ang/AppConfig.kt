@@ -142,13 +142,15 @@ object AppConfig {
     const val ETHA_USER_AGENT = "SkyRay/${BuildConfig.VERSION_NAME} (android)"   // how the server knows this app fetched
     const val ETHA_SUB_UPDATE_MINUTES = 180L                 // = the API's Profile-Update-Interval: 3 h (the header wins after the first fetch)
     const val ETHA_SUB_STALE_MS = 3_600_000L                 // on open: refresh the subscription quietly when its last fetch is older than this
-    // The link host is filtered by its name inside Iran, so the subscription is fetched with Encrypted Client Hello
-    // (EthaEchFetch → libv2ray's FetchSubscriptionEch), never with the name in the clear. The ECH key comes from the
-    // host's HTTPS DNS record, asked of these resolvers over plain UDP (the phone's own resolver is poisoned there);
-    // when none answers, the pinned key is offered and the server's retry key replaces it. The connection goes to a
-    // Cloudflare address the app already knows — the stored lines' addresses, the record's hints, then these pinned
-    // ones — never to the host's A record. Both pinned values are what the record said on 2026-10-04; stale is fine.
-    val ETHA_ECH_RESOLVERS = listOf("1.1.1.1", "8.8.8.8", "9.9.9.9")
+    // Our own link is fetched in one way only: with Encrypted Client Hello enforced (EthaEchFetch → the core's
+    // FetchSubscriptionEch, echfetch/ in this repo) — never with the link host's name in the clear, on the phone's own
+    // network or through the tunnel. The ECH key (Cloudflare's configuration, one for every zone) is asked over plain
+    // UDP DNS of these resolvers, all at once, as the HTTPS record of the ECH public name — what the lines' own ECH
+    // lookups ask; when none answers, the pinned key is offered and the server's retry key replaces it. The connection
+    // goes to a Cloudflare address the app already knows — the stored lines' addresses, then these pinned ones — never
+    // to the host's A record. Both pinned values are what DNS said on 2026-10-04; stale is fine.
+    val ETHA_ECH_RESOLVERS = listOf("8.8.8.8", "1.1.1.1", "9.9.9.9")
+    const val ETHA_ECH_LOOKUP_NAME = "cloudflare-ech.com"
     val ETHA_ECH_ADDRESSES = listOf("104.21.67.176", "172.67.179.3")
     const val ETHA_ECH_PINNED_KEY = "AEX+DQBB+AAgACD1pZvdD5sHHANMZyCYm0HK9WMgj+BzRP7oSbbFgbGsNQAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA="
     // The app's own updates (/dl/ on the service), not the link: this one address only (operator's rule) —

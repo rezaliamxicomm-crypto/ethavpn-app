@@ -560,7 +560,13 @@ object AngConfigManager {
             val proxyUsername = SettingsManager.getSocksUsername()
             val proxyPassword = SettingsManager.getSocksPassword()
 
-            var response = try {
+            // Our own link is fetched in one way only: with Encrypted Client Hello enforced (EthaEchFetch) — on the
+            // phone's own network and, failing that, through the tunnel; never with its host's name in the clear and
+            // never by the plain client below. Any other provider's link: as upstream fetches it.
+            val ours = EthaSubscription.isSubLink(url)
+            var response = if (ours) {
+                EthaEchFetch.fetch(url, it.guid, userAgent) ?: UrlContentResponse("")
+            } else try {
                 val httpPort = SettingsManager.getHttpPort()
                 HttpUtil.getUrlContentWithHeaders(
                     UrlContentRequest(
@@ -576,13 +582,8 @@ object AngConfigManager {
                 LogUtil.e(AppConfig.ANG_PACKAGE, "Update subscription: proxy not ready or other error", e)
                 UrlContentResponse("")
             }
-            if (response.body.isEmpty()) {
-                response = if (EthaSubscription.isSubLink(url)) {
-                    // Our link host is filtered by its name inside Iran: it is fetched with Encrypted Client Hello
-                    // enforced (EthaEchFetch), and never with the name in the clear — no plain fetch, whatever
-                    // happened above.
-                    EthaEchFetch.fetch(url, it.guid, userAgent) ?: UrlContentResponse("")
-                } else try {
+            if (response.body.isEmpty() && !ours) {
+                response = try {
                     HttpUtil.getUrlContentWithHeaders(
                         UrlContentRequest(
                             url = url,

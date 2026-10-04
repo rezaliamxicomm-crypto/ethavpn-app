@@ -1,1 +1,1 @@
-Your subscription now refreshes even where its link address is filtered: the app hides that address inside the connection (Encrypted Client Hello) and never sends it in the clear. Nothing to do on your side; refreshing simply works in more places.
+Refreshing your subscription now works in more places: the app always fetches your link with Encrypted Client Hello, which hides the link's address inside the connection. Nothing to do on your side.

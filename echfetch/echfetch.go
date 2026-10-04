@@ -1,23 +1,28 @@
 package libv2ray
 
-// The SkyRay app's subscription fetch with Encrypted Client Hello (ECH).
+// The SkyRay apps' subscription fetch with Encrypted Client Hello (ECH): one file, the same in the
+// Android and the iOS repository (there it is compiled into libXray's C bridge as package main).
 //
-// The link host is filtered by its name: a connection that states the name in the clear is cut,
-// one that hides it with ECH passes. So this fetch never states the name in the clear.
+// Every fetch of the app's own link goes through here, and ECH is enforced: once a key is set Go's
+// TLS never falls back to a server name in the clear, and the request is written only after the
+// server has accepted ECH. A link that cannot be fetched with ECH is not fetched.
 //
-//   - The ECH key comes from the host's HTTPS DNS record, asked of public resolvers over plain
-//     UDP port 53 (never the phone's own resolver, never DNS over HTTPS), every resolver at once,
-//     the first answer that carries a key wins; an answer without the key (an injected one) is
-//     skipped and the socket keeps listening for the real one until the time is up.
-//   - When no resolver delivers a key, a key the app carries is used; a key the server no longer
-//     knows is answered with a retry key, and the fetch goes again with that, so no DNS is needed.
+//   - The key (Cloudflare's ECH configuration) is asked over plain UDP DNS, port 53, of public
+//     resolvers, all at once: the HTTPS record of lookupName, the first answer that carries a key
+//     wins; an answer without one (an injected one) is skipped and the socket keeps listening
+//     until the time is up. Never the phone's own resolver, never DNS over HTTPS.
+//   - When no resolver delivers a key, the key the app carries is offered. A key the server no
+//     longer knows is answered with a retry key, and the fetch goes again with that one — so the
+//     carried key never has to be fresh.
 //   - The connection goes to a Cloudflare address the app already knows, in this order: the stored
-//     lines' clean addresses, the record's address hints, a pinned list; never the host's A record.
-//   - The outer name is the key's public name; the real host travels encrypted. When the server
-//     does not accept ECH the request is not sent and the next address is tried: there is no
-//     fallback to a plain-text name.
+//     lines' clean addresses, the record's address hints (only when the record is the host's own),
+//     a pinned list; never the host's A record.
+//   - Past the tunnel or through it: with "interface" every socket is bound to that interface
+//     (iOS, to leave beside a running tunnel); with "proxy" the connection is opened through that
+//     local HTTP proxy (Android, the running tunnel's own) — no UDP travels there, so no resolver
+//     is asked and the key is the carried one.
 //
-// Exposed to the app as FetchSubscriptionEch(requestJSON) -> resultJSON, like FetchTlsCertSha256.
+// Exposed to the apps as FetchSubscriptionEch(requestJSON) -> resultJSON.
 
 import (
 	"bufio"
@@ -35,17 +40,23 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
 type echFetchRequest struct {
-	URL       string   `json:"url"`
-	Addresses []string `json:"addresses"`       // Cloudflare addresses to try first (the stored lines' clean ones)
-	Pinned    []string `json:"pinnedAddresses"` // tried last, after the record's address hints
-	Resolvers []string `json:"resolvers"`       // asked over plain UDP 53 for the HTTPS record; "ip" or "ip:port"
-	PinnedKey string   `json:"pinnedKey"`       // base64 ECHConfigList, used when no resolver delivers one
-	UserAgent string   `json:"userAgent"`
-	TimeoutMs int64    `json:"timeoutMs"`
+	URL           string   `json:"url"`
+	Addresses     []string `json:"addresses"`       // Cloudflare addresses to try first (the stored lines' clean ones)
+	Pinned        []string `json:"pinnedAddresses"` // tried last
+	Resolvers     []string `json:"resolvers"`       // asked over plain UDP 53 for the HTTPS record; "ip" or "ip:port"
+	LookupName    string   `json:"lookupName"`      // whose HTTPS record carries the key; empty: the url's host
+	PinnedKey     string   `json:"pinnedKey"`       // base64 ECHConfigList, offered when no resolver delivers one
+	UserAgent     string   `json:"userAgent"`
+	TimeoutMs     int64    `json:"timeoutMs"`
+	Interface     string   `json:"interface"`     // bind every socket to this interface (past a running tunnel)
+	Proxy         string   `json:"proxy"`         // "host:port" of a local HTTP proxy to connect through (the running tunnel's)
+	ProxyUser     string   `json:"proxyUser"`     // its account, when it asks for one
+	ProxyPassword string   `json:"proxyPassword"` //
 }
 
 type echFetchResult struct {
@@ -60,14 +71,27 @@ type echFetchResult struct {
 
 const (
 	echMaxBody        = 4 << 20
-	echDNSTimeout     = 3 * time.Second
-	echDialTimeout    = 4 * time.Second
 	echDefaultTimeout = 20 * time.Second
 	echDNSTypeHTTPS   = 65
 )
 
+// Variables, so the tests can shorten them.
+var (
+	echDNSTimeout       = 2 * time.Second // how long the resolvers get before the carried key is offered
+	echDialTimeout      = 4 * time.Second // per address
+	echHandshakeTimeout = 6 * time.Second // per address: one that stalls must not use up the others' time
+)
+
 // echRootCAs lets the tests pin their own certificate authority; nil means the system's.
 var echRootCAs *x509.CertPool
+
+// echSocketControl is what net.Dialer.Control takes.
+type echSocketControl = func(network, address string, c syscall.RawConn) error
+
+// echBindToInterface is set by the platform file that knows how to bind a socket to an interface
+// (echfetch_darwin.go). Where there is none, a request that names an interface fails rather than
+// leave by another way than the caller asked for.
+var echBindToInterface func(name string) (echSocketControl, error)
 
 // FetchSubscriptionEch fetches requestJSON's url over TLS with ECH enforced and returns the
 // result as JSON (see echFetchRequest / echFetchResult).
@@ -90,6 +114,14 @@ func marshalEchResult(r echFetchResult) string {
 	return string(b)
 }
 
+// echRoute is how a fetch leaves the phone: bound to an interface, through a proxy, or neither.
+type echRoute struct {
+	control       echSocketControl
+	proxy         string
+	proxyUser     string
+	proxyPassword string
+}
+
 func fetchSubscriptionEch(req echFetchRequest) echFetchResult {
 	u, err := url.Parse(strings.TrimSpace(req.URL))
 	if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Hostname() == "" {
@@ -106,9 +138,33 @@ func fetchSubscriptionEch(req echFetchRequest) echFetchResult {
 	}
 	deadline := time.Now().Add(timeout)
 
-	key, keySource, hints := echKeyFromDNS(host, req.Resolvers, echDNSTimeout)
+	route := echRoute{proxy: strings.TrimSpace(req.Proxy), proxyUser: req.ProxyUser, proxyPassword: req.ProxyPassword}
+	if name := strings.TrimSpace(req.Interface); name != "" {
+		if echBindToInterface == nil {
+			return echFetchResult{Error: "ech: binding to an interface is not supported here"}
+		}
+		control, err := echBindToInterface(name)
+		if err != nil {
+			return echFetchResult{Error: "ech: interface " + name + ": " + err.Error()}
+		}
+		route.control = control
+	}
+
+	var key []byte
+	var keySource string
+	var hints []string
+	if route.proxy == "" { // an HTTP proxy carries no UDP
+		lookup := strings.TrimSuffix(strings.TrimSpace(req.LookupName), ".")
+		if lookup == "" {
+			lookup = host
+		}
+		key, keySource, hints = echKeyFromDNS(lookup, req.Resolvers, echDNSTimeout, route.control)
+		if !strings.EqualFold(lookup, host) {
+			hints = nil // another name's addresses
+		}
+	}
 	if key == nil && strings.TrimSpace(req.PinnedKey) != "" {
-		if k, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.PinnedKey)); err == nil && len(k) > 0 {
+		if k, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.PinnedKey)); err == nil && echValidConfigList(k) {
 			key, keySource = k, "pinned"
 		}
 	}
@@ -126,7 +182,7 @@ func fetchSubscriptionEch(req echFetchRequest) echFetchResult {
 		if !time.Now().Before(deadline) {
 			break
 		}
-		res, err := echFetchOnce(host, port, u.RequestURI(), addr, key, keySource, req.UserAgent, deadline)
+		res, err := echFetchOnce(host, port, u.RequestURI(), addr, key, keySource, req.UserAgent, route, deadline)
 		if err == nil {
 			return res
 		}
@@ -134,9 +190,9 @@ func fetchSubscriptionEch(req echFetchRequest) echFetchResult {
 		// The server did not know our key but handed back the current one: keep it for every
 		// remaining attempt, and try this address again with it right away.
 		var rej *tls.ECHRejectionError
-		if errors.As(err, &rej) && len(rej.RetryConfigList) > 0 {
+		if errors.As(err, &rej) && echValidConfigList(rej.RetryConfigList) {
 			key, keySource = rej.RetryConfigList, "retry"
-			if res, err = echFetchOnce(host, port, u.RequestURI(), addr, key, keySource, req.UserAgent, deadline); err == nil {
+			if res, err = echFetchOnce(host, port, u.RequestURI(), addr, key, keySource, req.UserAgent, route, deadline); err == nil {
 				return res
 			}
 			lastErr = err
@@ -145,16 +201,14 @@ func fetchSubscriptionEch(req echFetchRequest) echFetchResult {
 	return echFetchResult{Error: "ech: " + lastErr.Error()}
 }
 
-func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, userAgent string, deadline time.Time) (echFetchResult, error) {
+func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, userAgent string, route echRoute, deadline time.Time) (echFetchResult, error) {
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
-	d := net.Dialer{Timeout: echDialTimeout}
-	raw, err := d.DialContext(ctx, "tcp", net.JoinHostPort(addr, port))
+	raw, err := echDial(ctx, route, net.JoinHostPort(addr, port))
 	if err != nil {
 		return echFetchResult{}, err
 	}
 	defer raw.Close()
-	_ = raw.SetDeadline(deadline)
 
 	cfg := &tls.Config{
 		ServerName: host,
@@ -166,12 +220,16 @@ func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, us
 		RootCAs:                        echRootCAs,
 	}
 	conn := tls.Client(raw, cfg)
-	if err := conn.HandshakeContext(ctx); err != nil {
+	hctx, hcancel := context.WithTimeout(ctx, echHandshakeTimeout)
+	err = conn.HandshakeContext(hctx)
+	hcancel()
+	if err != nil {
 		return echFetchResult{}, err
 	}
 	if !conn.ConnectionState().ECHAccepted {
 		return echFetchResult{}, errors.New("ech not accepted by " + addr)
 	}
+	_ = raw.SetDeadline(deadline) // the exchange itself may take what is left
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+host+requestURI, nil)
 	if err != nil {
@@ -214,6 +272,52 @@ func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, us
 	}, nil
 }
 
+// echDial opens the TCP connection to target ("ip:port"): straight, bound to the route's
+// interface, or through the route's HTTP proxy with CONNECT.
+func echDial(ctx context.Context, route echRoute, target string) (net.Conn, error) {
+	d := net.Dialer{Timeout: echDialTimeout, Control: route.control}
+	if route.proxy == "" {
+		return d.DialContext(ctx, "tcp", target)
+	}
+	c, err := d.DialContext(ctx, "tcp", route.proxy)
+	if err != nil {
+		return nil, err
+	}
+	if dl, ok := ctx.Deadline(); ok {
+		_ = c.SetDeadline(dl)
+	}
+	connect := "CONNECT " + target + " HTTP/1.1\r\nHost: " + target + "\r\n"
+	if route.proxyUser != "" || route.proxyPassword != "" {
+		connect += "Proxy-Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(route.proxyUser+":"+route.proxyPassword)) + "\r\n"
+	}
+	if _, err := c.Write([]byte(connect + "\r\n")); err != nil {
+		c.Close()
+		return nil, err
+	}
+	br := bufio.NewReader(c)
+	resp, err := http.ReadResponse(br, &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		c.Close()
+		return nil, errors.New("proxy: " + err.Error())
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		c.Close()
+		return nil, errors.New("proxy answered " + resp.Status)
+	}
+	if br.Buffered() > 0 { // nothing should follow the answer before we speak; keep it if something did
+		return &echBufferedConn{Conn: c, r: br}, nil
+	}
+	return c, nil
+}
+
+type echBufferedConn struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+func (c *echBufferedConn) Read(p []byte) (int, error) { return c.r.Read(p) }
+
 func echDedupe(in []string) []string {
 	seen := make(map[string]bool, len(in))
 	out := make([]string, 0, len(in))
@@ -228,6 +332,32 @@ func echDedupe(in []string) []string {
 	return out
 }
 
+// echValidConfigList says whether b has the shape of an ECHConfigList with at least one config
+// of the version this client speaks (0xfe0d). A list without that shape would end every
+// handshake before it began.
+func echValidConfigList(b []byte) bool {
+	if len(b) < 6 || int(binary.BigEndian.Uint16(b))+2 != len(b) {
+		return false
+	}
+	known := false
+	for p := 2; p < len(b); {
+		if p+4 > len(b) {
+			return false
+		}
+		version := binary.BigEndian.Uint16(b[p:])
+		size := int(binary.BigEndian.Uint16(b[p+2:]))
+		p += 4
+		if p+size > len(b) {
+			return false
+		}
+		p += size
+		if version == 0xfe0d && size > 0 {
+			known = true
+		}
+	}
+	return known
+}
+
 // ---- the HTTPS record over plain UDP DNS ---------------------------------------------------
 
 type echDNSAnswer struct {
@@ -236,9 +366,9 @@ type echDNSAnswer struct {
 	src   string
 }
 
-// echKeyFromDNS asks every resolver at once for host's HTTPS record and returns the first key
+// echKeyFromDNS asks every resolver at once for name's HTTPS record and returns the first key
 // that arrives, with that answer's IPv4 hints. Nothing usable within timeout: nil.
-func echKeyFromDNS(host string, resolvers []string, timeout time.Duration) ([]byte, string, []string) {
+func echKeyFromDNS(name string, resolvers []string, timeout time.Duration, control echSocketControl) ([]byte, string, []string) {
 	resolvers = echDedupe(resolvers)
 	if len(resolvers) == 0 {
 		return nil, "", nil
@@ -251,7 +381,7 @@ func echKeyFromDNS(host string, resolvers []string, timeout time.Duration) ([]by
 		wg.Add(1)
 		go func(resolver string) {
 			defer wg.Done()
-			if a, ok := echQueryHTTPS(ctx, resolver, host); ok {
+			if a, ok := echQueryHTTPS(ctx, resolver, name, control); ok {
 				results <- a
 			}
 		}(r)
@@ -265,12 +395,12 @@ func echKeyFromDNS(host string, resolvers []string, timeout time.Duration) ([]by
 
 // echQueryHTTPS sends one HTTPS-record query and reads datagrams until one carries an ECH key
 // or the context ends. An answer without the key (an injected one) is skipped, not trusted.
-func echQueryHTTPS(ctx context.Context, resolver, host string) (echDNSAnswer, bool) {
+func echQueryHTTPS(ctx context.Context, resolver, name string, control echSocketControl) (echDNSAnswer, bool) {
 	addr := resolver
 	if _, _, err := net.SplitHostPort(resolver); err != nil {
 		addr = net.JoinHostPort(resolver, "53")
 	}
-	var d net.Dialer
+	d := net.Dialer{Control: control}
 	c, err := d.DialContext(ctx, "udp", addr)
 	if err != nil {
 		return echDNSAnswer{}, false
@@ -284,7 +414,7 @@ func echQueryHTTPS(ctx context.Context, resolver, host string) (echDNSAnswer, bo
 		return echDNSAnswer{}, false
 	}
 	id := binary.BigEndian.Uint16(idb[:])
-	if _, err := c.Write(echDNSQuery(id, host)); err != nil {
+	if _, err := c.Write(echDNSQuery(id, name)); err != nil {
 		return echDNSAnswer{}, false
 	}
 	buf := make([]byte, 4096)
@@ -389,7 +519,7 @@ func echParseHTTPS(d []byte, id uint16) (key []byte, hints []string, ok bool) {
 					h = append(h, net.IP(v[j:j+4]).String())
 				}
 			case 5: // ech
-				if len(v) > 4 {
+				if echValidConfigList(v) {
 					k = append([]byte(nil), v...)
 				}
 			}
