@@ -657,3 +657,34 @@ func TestEchAStalledAddressLeavesTimeForTheNext(t *testing.T) {
 		t.Fatal("a request went out without ECH")
 	}
 }
+
+func TestEchANameIsDialledLikeAnAddress(t *testing.T) {
+	// The apps end their pinned list with a name (the ECH public name) for the system's resolver: on a
+	// network without IPv4 no IPv4 address can be dialled, only a name. Here the name is localhost.
+	list, key := testECHKey(t, 37)
+	port, _, plain := testServer(t, key)
+	res := fetchJSON(t, echFetchRequest{
+		URL:       "https://" + testHost + ":" + port + "/sub/abc",
+		Pinned:    []string{"localhost"},
+		PinnedKey: base64.StdEncoding.EncodeToString(list),
+		TimeoutMs: 5000,
+	})
+	if res.Error != "" || res.Status != 200 || !res.EchAccepted || res.Address != "localhost" {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	if plain.Load() != 0 {
+		t.Fatal("a request went out without ECH")
+	}
+	// through the proxy the name goes into the CONNECT line and the proxy resolves it
+	proxy, targets := connectProxy(t, "", "")
+	res = fetchJSON(t, echFetchRequest{
+		URL:       "https://" + testHost + ":" + port + "/sub/abc",
+		Pinned:    []string{"localhost"},
+		PinnedKey: base64.StdEncoding.EncodeToString(list),
+		Proxy:     proxy,
+		TimeoutMs: 5000,
+	})
+	if res.Error != "" || res.Status != 200 || len(targets()) != 1 || targets()[0] != "localhost:"+port {
+		t.Fatalf("unexpected result: %+v (proxy asked for %v)", res, targets())
+	}
+}

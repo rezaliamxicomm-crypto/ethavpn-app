@@ -148,10 +148,12 @@ object AppConfig {
     // UDP DNS of these resolvers, all at once, as the HTTPS record of the ECH public name — what the lines' own ECH
     // lookups ask; when none answers, the pinned key is offered and the server's retry key replaces it. The connection
     // goes to a Cloudflare address the app already knows — the stored lines' addresses, then these pinned ones — never
-    // to the host's A record. Both pinned values are what DNS said on 2026-10-04; stale is fine.
+    // to the host's A record. The pinned addresses and key are what DNS said on 2026-10-04; stale is fine. Last in the
+    // list a name, not an address: the ECH public name, resolved by the phone's own resolver — on a network without
+    // IPv4 (IPv6 only, NAT64) no IPv4 address can be dialled, only a name; any Cloudflare address serves the link host.
     val ETHA_ECH_RESOLVERS = listOf("8.8.8.8", "1.1.1.1", "9.9.9.9")
     const val ETHA_ECH_LOOKUP_NAME = "cloudflare-ech.com"
-    val ETHA_ECH_ADDRESSES = listOf("104.21.67.176", "172.67.179.3")
+    val ETHA_ECH_ADDRESSES = listOf("104.21.67.176", "172.67.179.3", ETHA_ECH_LOOKUP_NAME)
     const val ETHA_ECH_PINNED_KEY = "AEX+DQBB+AAgACD1pZvdD5sHHANMZyCYm0HK9WMgj+BzRP7oSbbFgbGsNQAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA="
     // The app's own updates (/dl/ on the service), not the link: this one address only (operator's rule) —
     // no fallback host, no GitHub. latest.json and the APK both come from here, and the APK must match the

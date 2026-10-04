@@ -82,7 +82,10 @@ class EthaEchFetchTest {
         assertEquals(0xFE, key[2].toInt() and 0xFF)
         assertEquals(0x0D, key[3].toInt() and 0xFF)
         assertTrue(AppConfig.ETHA_ECH_RESOLVERS.isNotEmpty())
-        assertTrue(AppConfig.ETHA_ECH_ADDRESSES.all { EthaEchFetch.candidateAddresses(listOf(it)) == listOf(it) })
+        // the pinned list: IPv4 addresses, then one name for the phone's resolver (a network without IPv4 reaches only a name)
+        assertTrue(AppConfig.ETHA_ECH_ADDRESSES.dropLast(1).all { EthaEchFetch.candidateAddresses(listOf(it)) == listOf(it) })
+        assertEquals(AppConfig.ETHA_ECH_LOOKUP_NAME, AppConfig.ETHA_ECH_ADDRESSES.last())
+        assertTrue(AppConfig.ETHA_ECH_LOOKUP_NAME != AppConfig.ETHA_SUB_HOST)   // the link host is never put into a DNS query
     }
 
     @Test
