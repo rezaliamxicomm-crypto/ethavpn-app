@@ -9,13 +9,14 @@ import com.v2ray.ang.util.LogUtil
 import libv2ray.Libv2ray
 
 /**
- * Fetches one of our links, the only way it is ever fetched: with Encrypted Client Hello enforced. The link
- * host's name is never stated in the clear — when ECH is not possible the fetch fails and the next refresh
- * tries again.
+ * Fetches one of our links with Encrypted Client Hello enforced: the link host's name is not stated in the
+ * clear by anything here.
  *
  * Two ways out, ECH on both: first on the phone's own network (the app is not inside its own VPN, so this
- * does not depend on the tunnel), the key asked over plain UDP DNS; when that gives nothing, through the
- * running tunnel's local proxy, with the key the app carries (no UDP travels through that proxy).
+ * does not depend on the tunnel), the key asked over plain UDP DNS; when nobody answers, through the running
+ * tunnel's local proxy, with the key the app carries (no UDP travels through that proxy). When neither way
+ * got an answer the caller (AngConfigManager.updateConfigViaSub) fetches the link once more as before,
+ * without ECH — the operator's last resort for a network that blocks ECH itself.
  *
  * The work is the core's (libv2ray's FetchSubscriptionEch, from echfetch/ in this repo): the key from DNS or
  * the pinned one with the server's retry key; a connection to a Cloudflare address the app already knows,
@@ -32,13 +33,20 @@ object EthaEchFetch {
     /** The tunnel's local proxy, for the fetch that goes through it. */
     data class TunnelProxy(val address: String, val user: String? = null, val password: String? = null)
 
-    /** The body and headers of `url`, fetched with ECH; null when that did not succeed (the reason is in the log). */
-    fun fetch(url: String, subscriptionId: String?, userAgent: String?): UrlContentResponse? {
+    /** What a fetch came to: the subscription, when there is one, and whether the server answered at all (any status). */
+    data class Outcome(val response: UrlContentResponse?, val answered: Boolean)
+
+    /**
+     * `url` fetched with ECH, on the phone's network and then through the tunnel. `response` is the body and headers
+     * of a 2xx answer, else null (the reason is in the log); `answered` is false only when nobody answered on either way.
+     */
+    fun fetch(url: String, subscriptionId: String?, userAgent: String?): Outcome {
         val stored = storedAddresses(subscriptionId)
         val direct = call(buildRequest(url, stored, userAgent), "on the phone's network")
-        if (answered(direct)) return toResponse(direct)   // the server answered, whatever it said: through the tunnel it says the same
+        if (answered(direct)) return Outcome(toResponse(direct), true)   // the server answered, whatever it said: through the tunnel it says the same
         val proxy = TunnelProxy("127.0.0.1:${SettingsManager.getHttpPort()}", SettingsManager.getSocksUsername(), SettingsManager.getSocksPassword())
-        return toResponse(call(buildRequest(url, stored, userAgent, proxy), "through the tunnel"))
+        val tunnel = call(buildRequest(url, stored, userAgent, proxy), "through the tunnel")
+        return Outcome(toResponse(tunnel), answered(tunnel))
     }
 
     private fun call(request: EchFetchRequest, way: String): EchFetchResult? {
@@ -60,7 +68,7 @@ object EthaEchFetch {
         return result
     }
 
-    /** Pure: the server itself answered, with ECH — any status. Only a fetch that reached nobody is worth a second way. */
+    /** Pure: the server itself answered, with ECH — any status. Only a fetch that reached nobody is worth another way. */
     fun answered(result: EchFetchResult?): Boolean =
         result != null && result.error.isNullOrEmpty() && result.echAccepted && result.status > 0
 

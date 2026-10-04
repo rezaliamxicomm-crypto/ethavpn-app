@@ -142,9 +142,9 @@ object AppConfig {
     const val ETHA_USER_AGENT = "SkyRay/${BuildConfig.VERSION_NAME} (android)"   // how the server knows this app fetched
     const val ETHA_SUB_UPDATE_MINUTES = 180L                 // = the API's Profile-Update-Interval: 3 h (the header wins after the first fetch)
     const val ETHA_SUB_STALE_MS = 3_600_000L                 // on open: refresh the subscription quietly when its last fetch is older than this
-    // Our own link is fetched in one way only: with Encrypted Client Hello enforced (EthaEchFetch → the core's
-    // FetchSubscriptionEch, echfetch/ in this repo) — never with the link host's name in the clear, on the phone's own
-    // network or through the tunnel. The ECH key (Cloudflare's configuration, one for every zone) is asked over plain
+    // Our own link is fetched with Encrypted Client Hello enforced (EthaEchFetch → the core's FetchSubscriptionEch,
+    // echfetch/ in this repo), on the phone's own network and then through the tunnel; only when nobody answered on
+    // either way is it fetched once more without ECH, the last resort (AngConfigManager.updateConfigViaSub). The ECH key (Cloudflare's configuration, one for every zone) is asked over plain
     // UDP DNS of these resolvers, all at once, as the HTTPS record of the ECH public name — what the lines' own ECH
     // lookups ask; when none answers, the pinned key is offered and the server's retry key replaces it. The connection
     // goes to a Cloudflare address the app already knows — the stored lines' addresses, then these pinned ones — never

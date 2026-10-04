@@ -560,12 +560,17 @@ object AngConfigManager {
             val proxyUsername = SettingsManager.getSocksUsername()
             val proxyPassword = SettingsManager.getSocksPassword()
 
-            // Our own link is fetched in one way only: with Encrypted Client Hello enforced (EthaEchFetch) — on the
-            // phone's own network and, failing that, through the tunnel; never with its host's name in the clear and
-            // never by the plain client below. Any other provider's link: as upstream fetches it.
+            // Our own link is fetched with Encrypted Client Hello enforced (EthaEchFetch): on the phone's own network
+            // and, failing that, through the tunnel. Only when nobody answered on either way does the plain client
+            // below fetch it once, the host's name in the clear, as every version before 1.3.6 did — the operator's
+            // last resort for a network that blocks ECH itself. An answer of any status is final: no plain fetch
+            // after it. Any other provider's link: as upstream fetches it.
             val ours = EthaSubscription.isSubLink(url)
+            var answered = false
             var response = if (ours) {
-                EthaEchFetch.fetch(url, it.guid, userAgent) ?: UrlContentResponse("")
+                val ech = EthaEchFetch.fetch(url, it.guid, userAgent)
+                answered = ech.answered
+                ech.response ?: UrlContentResponse("")
             } else try {
                 val httpPort = SettingsManager.getHttpPort()
                 HttpUtil.getUrlContentWithHeaders(
@@ -582,14 +587,17 @@ object AngConfigManager {
                 LogUtil.e(AppConfig.ANG_PACKAGE, "Update subscription: proxy not ready or other error", e)
                 UrlContentResponse("")
             }
-            if (response.body.isEmpty() && !ours) {
+            if (response.body.isEmpty() && !answered) {
+                if (ours) LogUtil.w(AppConfig.TAG, "ECH got no answer on either way: fetching the link without it, the last resort")
                 response = try {
-                    HttpUtil.getUrlContentWithHeaders(
+                    val plain = HttpUtil.getUrlContentWithHeaders(
                         UrlContentRequest(
                             url = url,
                             userAgent = userAgent
                         )
                     )
+                    if (ours) LogUtil.i(AppConfig.TAG, "Subscription fetched without ECH (the last resort)")
+                    plain
                 } catch (e: Exception) {
                     LogUtil.e(AppConfig.TAG, "Update subscription: Failed to get URL content with user agent", e)
                     UrlContentResponse("")

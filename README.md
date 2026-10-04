@@ -53,13 +53,14 @@ release as `signing-cert-sha256.txt`.
   before install (`UpdateCheckerManager`, `CheckUpdateActivity`); no other address, no GitHub fallback.
 - Defaults for Iran: the Iran routing preset, Iranian geo files, a domestic resolver for the
   direct-routed traffic, no fragment, no mux.
-- Our own link is fetched in one way only: with Encrypted Client Hello enforced (`EthaEchFetch`,
-  `echfetch/`) — the link host's name is never stated in the clear, and when ECH is not possible the
-  link is not fetched. The ECH key is asked over plain UDP DNS of public resolvers (the HTTPS record
-  of the ECH public name), or is the pinned key, which the server's retry key refreshes; the
-  connection goes to a Cloudflare address the app already knows, never to the host's A record. First
-  on the phone's own network, then through the running tunnel's local proxy — ECH on both. CI builds
-  `libv2ray.aar` from the `AndroidLibXrayLite` submodule with `echfetch/echfetch.go` added.
+- Our own link is fetched with Encrypted Client Hello enforced (`EthaEchFetch`, `echfetch/`): the link
+  host's name is not stated in the clear. The ECH key is asked over plain UDP DNS of public resolvers
+  (the HTTPS record of the ECH public name), or is the pinned key, which the server's retry key
+  refreshes; the connection goes to a Cloudflare address the app already knows, never to the host's A
+  record. First on the phone's own network, then through the running tunnel's local proxy — ECH on
+  both. Only when nobody answered on either way is the link fetched once more as before, without ECH:
+  the last resort for a network that blocks ECH itself. CI builds `libv2ray.aar` from the
+  `AndroidLibXrayLite` submodule with `echfetch/echfetch.go` added.
 
 Everything else is upstream v2rayNG 2.2.6. Rebases onto newer upstream releases are expected;
 keep the diff small.

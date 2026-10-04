@@ -3,9 +3,11 @@ package libv2ray
 // The SkyRay apps' subscription fetch with Encrypted Client Hello (ECH): one file, the same in the
 // Android and the iOS repository (there it is compiled into libXray's C bridge as package main).
 //
-// Every fetch of the app's own link goes through here, and ECH is enforced: once a key is set Go's
+// The apps fetch their own link through here first, and here ECH is enforced: once a key is set Go's
 // TLS never falls back to a server name in the clear, and the request is written only after the
-// server has accepted ECH. A link that cannot be fetched with ECH is not fetched.
+// server has accepted ECH. Nothing in this file states the link host's name in the clear. What an
+// app does when this got no answer on any way is the app's own: one last fetch as before this
+// file existed, without ECH (the operator's last resort for a network that blocks ECH itself).
 //
 //   - The key (Cloudflare's ECH configuration) is asked over plain UDP DNS, port 53, of public
 //     resolvers, all at once: the HTTPS record of lookupName, the first answer that carries a key

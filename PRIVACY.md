@@ -12,9 +12,10 @@ What leaves your phone because the service cannot work without it:
   when you tap Refresh). That request carries the app's name and version
   (`SkyRay/<version> (android)`). The server records the time of the last fetch per
   subscription so that support can tell whether your app has ever received the servers. The
-  link is fetched with Encrypted Client Hello, so its address is not visible on the way; for
-  that the app asks three public DNS services (Google, Cloudflare, Quad9) for Cloudflare's
-  public encryption key — a question that names Cloudflare, not you and not your link.
+  link is fetched with Encrypted Client Hello, so its address is not visible on the way (only
+  when that gets no answer is it fetched as an ordinary request); for that the app asks three
+  public DNS services (Google, Cloudflare, Quad9) for Cloudflare's public encryption key — a
+  question that names Cloudflare, not you and not your link.
 - Your VPN traffic goes to the EthaVPN servers. What the servers keep is described by the
   service, not by this app; the app adds nothing to it.
 - Once a day the app asks the EthaVPN download page whether a newer version exists. That
@@ -37,7 +38,7 @@ its source is public and every release is signed.
 - لینک اشتراکی که اضافه کرده‌اید هر چند ساعت (و با زدن بروزرسانی) از سرور EthaVPN گرفته
   می‌شود. این درخواست نام و نسخه‌ی برنامه را همراه دارد. سرور زمان آخرین دریافت هر اشتراک را نگه
   می‌دارد تا پشتیبانی بداند برنامه‌ی شما سرورها را گرفته است یا نه. لینک با Encrypted Client Hello
-  گرفته می‌شود تا نشانی آن در مسیر دیده نشود؛ برای این کار برنامه کلید عمومی Cloudflare را از سه
+  گرفته می‌شود تا نشانی آن در مسیر دیده نشود (فقط اگر این راه پاسخی نگیرد، با یک درخواست معمولی)؛ برای این کار برنامه کلید عمومی Cloudflare را از سه
   سرویس DNS عمومی — گوگل، Cloudflare و Quad9 — می‌پرسد، پرسشی که نام Cloudflare را دارد، نه شما
   و نه لینک شما.
 - ترافیک VPN شما به سرورهای EthaVPN می‌رود. آنچه سرورها نگه می‌دارند را سرویس توضیح می‌دهد، نه

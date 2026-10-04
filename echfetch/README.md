@@ -1,9 +1,13 @@
 # echfetch: the subscription fetch with Encrypted Client Hello
 
-`echfetch.go` is `FetchSubscriptionEch(requestJSON) -> resultJSON`: the one way either SkyRay app
-fetches its own link. ECH is enforced — once a key is set Go's TLS never falls back to a server name
-in the clear, and the request is written only after the server has accepted ECH; a link that cannot
-be fetched with ECH is not fetched. Standard library only.
+`echfetch.go` is `FetchSubscriptionEch(requestJSON) -> resultJSON`: how both SkyRay apps fetch their
+own link. Here ECH is enforced — once a key is set Go's TLS never falls back to a server name in the
+clear, and the request is written only after the server has accepted ECH; nothing in this directory
+states the link host's name in the clear. Standard library only.
+
+The apps call it twice at most (the two ways out below). Only when neither call got an answer does
+an app fetch the link once more as it did before, without ECH: the operator's last resort for a
+network that blocks ECH itself. That last fetch is the app's own code, not this directory's.
 
 This directory is the same, file for file, in both repositories (`ethavpn-app`, `skyray-ios`): change
 it in both. Android compiles `echfetch.go` into `libv2ray` (`package libv2ray`, the
