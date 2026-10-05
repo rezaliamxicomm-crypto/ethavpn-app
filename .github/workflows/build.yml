@@ -79,7 +79,7 @@ jobs:
     # subscription fetch with Encrypted Client Hello (echfetch/README.md). Cached by the submodule commit,
     # that file's content and the NDK, so it is rebuilt only when one of them changes (about three minutes).
     - name: Setup Go (the core library's own version)
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version-file: AndroidLibXrayLite/go.mod
         cache-dependency-path: AndroidLibXrayLite/go.sum
