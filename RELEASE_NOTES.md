@@ -1,1 +1,1 @@
-Refreshing your subscription now works in more places: the app fetches your link with Encrypted Client Hello, which hides the link's address inside the connection. Nothing to do on your side.
+Refreshing your subscription now also works through an address inside Iran when the usual way is blocked, and the app accepts the Iran link from the bot. Nothing to do on your side.

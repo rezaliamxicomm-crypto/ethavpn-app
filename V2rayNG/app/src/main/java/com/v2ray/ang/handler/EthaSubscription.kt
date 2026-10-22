@@ -96,12 +96,12 @@ object EthaSubscription {
     }
 
     /**
-     * A link on an earlier address (ETHA_OLD_SUB_HOSTS) on the only one the app uses:
+     * A link on an earlier address (ETHA_OLD_SUB_HOSTS), or on the link hop inside Iran (ETHA_HOP_SUB_HOSTS), on the only one the app uses:
      * https://<ETHA_SUB_HOST>/sub/<the same token>, the name after '#' kept. Anything else: null.
      * The service answers every token on every address, so it is the same account.
      */
     fun migratedUrl(url: String?): String? {
-        val token = linkToken(url, AppConfig.ETHA_OLD_SUB_HOSTS) ?: return null
+        val token = linkToken(url, AppConfig.ETHA_OLD_SUB_HOSTS + AppConfig.ETHA_HOP_SUB_HOSTS) ?: return null
         val name = url!!.trim().substringAfter('#', "")
         val next = "https://${AppConfig.ETHA_SUB_HOST}${AppConfig.ETHA_SUB_PATH}$token"
         return if (name.isEmpty()) next else "$next#$name"

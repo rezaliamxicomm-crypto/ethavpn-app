@@ -15,8 +15,9 @@ import libv2ray.Libv2ray
  * Two ways out, ECH on both: first on the phone's own network (the app is not inside its own VPN, so this
  * does not depend on the tunnel), the key asked over plain UDP DNS; when nobody answers, through the running
  * tunnel's local proxy, with the key the app carries (no UDP travels through that proxy). When neither way
- * got an answer the caller (AngConfigManager.updateConfigViaSub) fetches the link once more as before,
- * without ECH — the operator's last resort for a network that blocks ECH itself.
+ * got an answer the caller (AngConfigManager.updateConfigViaSub) tries the link hop inside Iran (EthaHopFetch,
+ * plain, through the same core call) and then fetches the link once more as before, without ECH — the
+ * operator's last resort for a network that blocks ECH itself.
  *
  * The work is the core's (libv2ray's FetchSubscriptionEch, from echfetch/ in this repo): the key from DNS or
  * the pinned one with the server's retry key; a connection to a Cloudflare address the app already knows,
@@ -49,7 +50,7 @@ object EthaEchFetch {
         return Outcome(toResponse(tunnel), answered(tunnel))
     }
 
-    private fun call(request: EchFetchRequest, way: String): EchFetchResult? {
+    internal fun call(request: EchFetchRequest, way: String): EchFetchResult? {
         val raw = try {
             Libv2ray.fetchSubscriptionEch(JsonUtil.toJson(request))
         } catch (e: UnsatisfiedLinkError) {
@@ -60,10 +61,11 @@ object EthaEchFetch {
             return null
         }
         val result = JsonUtil.fromJsonSafe(raw, EchFetchResult::class.java)
-        if (toResponse(result) == null) {
-            LogUtil.w(AppConfig.TAG, "ECH fetch $way gave no subscription: ${describe(result)}")
+        val got = result != null && result.error.isNullOrEmpty() && result.status in 200..299 && !result.body.isNullOrEmpty()
+        if (!got) {
+            LogUtil.w(AppConfig.TAG, "fetch $way gave no subscription: ${describe(result)}")
         } else {
-            LogUtil.i(AppConfig.TAG, "Subscription fetched with ECH $way via ${result?.address} (key: ${result?.keySource})")
+            LogUtil.i(AppConfig.TAG, "Subscription fetched ${if (result!!.echAccepted) "with ECH" else "plain"} $way via ${result.address} (key: ${result.keySource})")
         }
         return result
     }
@@ -103,7 +105,7 @@ object EthaEchFetch {
     fun describe(result: EchFetchResult?): String = when {
         result == null -> "no result from the core"
         !result.error.isNullOrEmpty() -> result.error.orEmpty()
-        !result.echAccepted -> "ECH not accepted"
+        !result.echAccepted && result.keySource != "plain" -> "ECH not accepted"
         result.body.isNullOrEmpty() -> "status ${result.status}, empty body"
         else -> "status ${result.status}"
     }

@@ -688,3 +688,39 @@ func TestEchANameIsDialledLikeAnAddress(t *testing.T) {
 		t.Fatalf("unexpected result: %+v (proxy asked for %v)", res, targets())
 	}
 }
+
+func TestPlainFetchDialsTheGivenAddressWithoutEch(t *testing.T) {
+	// The link hop inside Iran: no key asked or offered, the given address dialled, the host's name only in the
+	// certificate check — and the server sees a request without ECH, the one place that is allowed.
+	port, accepts, plain := testServer(t, tls.EncryptedClientHelloKey{})
+	res := fetchJSON(t, echFetchRequest{
+		URL:       "https://" + testHost + ":" + port + "/sub/abc",
+		Addresses: []string{"127.0.0.1"},
+		Plain:     true,
+		UserAgent: "SkyRay/1.3.7 (android)",
+		TimeoutMs: 5000,
+	})
+	if res.Error != "" || res.Status != 200 || res.EchAccepted || res.KeySource != "plain" || res.Address != "127.0.0.1" {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	if res.Body != testBody || res.Headers["profile-update-interval"] != "3" {
+		t.Fatalf("body or headers: %+v", res)
+	}
+	if accepts.Load() != 1 || plain.Load() != 1 {
+		t.Fatalf("connections=%d plain=%d: one plain request, as asked", accepts.Load(), plain.Load())
+	}
+}
+
+func TestPlainFetchRefusesAnotherNamesCertificate(t *testing.T) {
+	// The hop's certificate must carry the url's host: an address answering with another name is not the hop.
+	port, _, plain := testServer(t, tls.EncryptedClientHelloKey{})
+	res := fetchJSON(t, echFetchRequest{
+		URL:       "https://other.example.test:" + port + "/sub/abc",
+		Addresses: []string{"127.0.0.1"},
+		Plain:     true,
+		TimeoutMs: 5000,
+	})
+	if res.Error == "" || res.Status != 0 || plain.Load() != 0 {
+		t.Fatalf("a certificate for another name must be refused before any request: %+v plain=%d", res, plain.Load())
+	}
+}

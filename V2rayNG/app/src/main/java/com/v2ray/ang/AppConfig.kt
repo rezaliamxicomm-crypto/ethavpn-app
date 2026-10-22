@@ -155,6 +155,16 @@ object AppConfig {
     const val ETHA_ECH_LOOKUP_NAME = "cloudflare-ech.com"
     val ETHA_ECH_ADDRESSES = listOf("104.21.67.176", "172.67.179.3", ETHA_ECH_LOOKUP_NAME)
     const val ETHA_ECH_PINNED_KEY = "AEX+DQBB+AAgACD1pZvdD5sHHANMZyCYm0HK9WMgj+BzRP7oSbbFgbGsNQAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA="
+    // The link hop inside Iran: the service's second address for the link, for networks that filter the link host's
+    // name. The fetch takes it after the two ECH ways gave nothing and before the last resort (EthaHopFetch): plain,
+    // by the core ("plain": true) — the hop's name is not listed and its certificate is public — dialled at the address
+    // given, so no DNS is asked and none can be poisoned; the name serves the certificate check alone. The service
+    // names the current hops in the header X-Etha-Link-Hops ("host=ip,host=ip"): the app keeps the last value it saw
+    // (PREF_ETHA_LINK_HOPS) and falls back to this list, so the spare name can take over without a release. A link on
+    // one of ETHA_HOP_SUB_HOSTS is ours too: moved to ETHA_SUB_HOST like a link on an old address.
+    val ETHA_LINK_HOPS = listOf("www.harlow-systems.org" to "185.83.210.148")
+    val ETHA_HOP_SUB_HOSTS = listOf("www.harlow-systems.org", "harlow-systems.org", "www.selvanemetricsz.com", "selvanemetricsz.com")
+    const val ETHA_LINK_HOPS_HEADER = "x-etha-link-hops"
     // The app's own updates (/dl/ on the service), not the link: this one address only (operator's rule) —
     // no fallback host, no GitHub. latest.json and the APK both come from here, and the APK must match the
     // sha256 latest.json names. (1.2.2 fell back to fra.mobileiphone.org, 1.1.5 and older read only that;
@@ -180,6 +190,7 @@ object AppConfig {
     const val PREF_ETHA_LAST_TEST = "pref_etha_last_test"
     const val PREF_ETHA_LAST_UPDATE_CHECK = "pref_etha_last_update_check"
     const val PREF_ETHA_DELETED_LINK = "pref_etha_deleted_link"   // "Delete account" removed it: never imported from the clipboard by itself again
+    const val PREF_ETHA_LINK_HOPS = "pref_etha_link_hops"       // the service's last X-Etha-Link-Hops: where the link hop inside Iran is
     // The rating ask (handler/RatePrompt): the phone's, not the account's — "Delete account" leaves them
     const val PREF_ETHA_RATE_CONNECTS = "pref_etha_rate_connects"            // connections that worked, made by hand
     const val PREF_ETHA_RATE_FIRST_AT = "pref_etha_rate_first_at"            // when the first of them was

@@ -23,6 +23,11 @@ package libv2ray
 //     (iOS, to leave beside a running tunnel); with "proxy" the connection is opened through that
 //     local HTTP proxy (Android, the running tunnel's own) — no UDP travels there, so no resolver
 //     is asked and the key is the carried one.
+//   - Plain, with "plain": true — the one way here without ECH, for the link hop inside Iran: a
+//     host whose name is not listed and whose certificate is public. No key is asked or offered; a
+//     TLS 1.2+ connection goes to the addresses given (the hop's own, so no DNS is asked and none
+//     can be poisoned), the url's host only as the certificate's name; the same route options
+//     apply. The apps take this way after the two ECH ways gave nothing and before their last resort.
 //
 // Exposed to the apps as FetchSubscriptionEch(requestJSON) -> resultJSON.
 
@@ -59,6 +64,7 @@ type echFetchRequest struct {
 	Proxy         string   `json:"proxy"`         // "host:port" of a local HTTP proxy to connect through (the running tunnel's)
 	ProxyUser     string   `json:"proxyUser"`     // its account, when it asks for one
 	ProxyPassword string   `json:"proxyPassword"` //
+	Plain         bool     `json:"plain"`         // no ECH: a plain TLS fetch to the addresses given, the url's host as the certificate's name (the link hop inside Iran)
 }
 
 type echFetchResult struct {
@@ -67,7 +73,7 @@ type echFetchResult struct {
 	Body        string            `json:"body"`
 	EchAccepted bool              `json:"echAccepted"`
 	Address     string            `json:"address"`
-	KeySource   string            `json:"keySource"` // "dns:<resolver>", "pinned" or "retry"
+	KeySource   string            `json:"keySource"` // "dns:<resolver>", "pinned" or "retry"; "plain" when no ECH was asked
 	Error       string            `json:"error"`
 }
 
@@ -151,6 +157,9 @@ func fetchSubscriptionEch(req echFetchRequest) echFetchResult {
 		}
 		route.control = control
 	}
+	if req.Plain {
+		return fetchPlain(req, host, port, u.RequestURI(), route, deadline)
+	}
 
 	var key []byte
 	var keySource string
@@ -203,6 +212,58 @@ func fetchSubscriptionEch(req echFetchRequest) echFetchResult {
 	return echFetchResult{Error: "ech: " + lastErr.Error()}
 }
 
+// fetchPlain is the way without ECH, for a host whose name is not listed and whose certificate is
+// public — the link hop inside Iran. The addresses are dialled as given (the hop's own: no DNS is
+// asked, so none can be poisoned); only when none is given is the host's name itself dialled. The
+// host's name serves the certificate check alone.
+func fetchPlain(req echFetchRequest, host, port, requestURI string, route echRoute, deadline time.Time) echFetchResult {
+	addrs := echDedupe(append(append([]string{}, req.Addresses...), req.Pinned...))
+	if len(addrs) == 0 {
+		addrs = []string{host}
+	}
+	var lastErr error = errors.New("no attempt made")
+	for _, addr := range addrs {
+		if !time.Now().Before(deadline) {
+			break
+		}
+		res, err := plainFetchOnce(host, port, requestURI, addr, req.UserAgent, route, deadline)
+		if err == nil {
+			return res
+		}
+		lastErr = err
+	}
+	return echFetchResult{Error: "plain: " + lastErr.Error()}
+}
+
+func plainFetchOnce(host, port, requestURI, addr, userAgent string, route echRoute, deadline time.Time) (echFetchResult, error) {
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	raw, err := echDial(ctx, route, net.JoinHostPort(addr, port))
+	if err != nil {
+		return echFetchResult{}, err
+	}
+	defer raw.Close()
+	conn := tls.Client(raw, &tls.Config{
+		ServerName: host,
+		MinVersion: tls.VersionTLS12,
+		NextProtos: []string{"http/1.1"},
+		RootCAs:    echRootCAs,
+	})
+	hctx, hcancel := context.WithTimeout(ctx, echHandshakeTimeout)
+	err = conn.HandshakeContext(hctx)
+	hcancel()
+	if err != nil {
+		return echFetchResult{}, err
+	}
+	_ = raw.SetDeadline(deadline) // the exchange itself may take what is left
+	res, err := echExchange(ctx, conn, host, requestURI, userAgent)
+	if err != nil {
+		return echFetchResult{}, err
+	}
+	res.Address, res.KeySource = addr, "plain"
+	return res, nil
+}
+
 func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, userAgent string, route echRoute, deadline time.Time) (echFetchResult, error) {
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
@@ -232,7 +293,16 @@ func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, us
 		return echFetchResult{}, errors.New("ech not accepted by " + addr)
 	}
 	_ = raw.SetDeadline(deadline) // the exchange itself may take what is left
+	res, err := echExchange(ctx, conn, host, requestURI, userAgent)
+	if err != nil {
+		return echFetchResult{}, err
+	}
+	res.EchAccepted, res.Address, res.KeySource = true, addr, keySource
+	return res, nil
+}
 
+// echExchange is the request and its answer on an open TLS connection, the same for both ways.
+func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent string) (echFetchResult, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+host+requestURI, nil)
 	if err != nil {
 		return echFetchResult{}, err
@@ -265,12 +335,9 @@ func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, us
 		}
 	}
 	return echFetchResult{
-		Status:      resp.StatusCode,
-		Headers:     headers,
-		Body:        string(body),
-		EchAccepted: true,
-		Address:     addr,
-		KeySource:   keySource,
+		Status:  resp.StatusCode,
+		Headers: headers,
+		Body:    string(body),
 	}, nil
 }
 

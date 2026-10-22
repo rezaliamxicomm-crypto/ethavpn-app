@@ -561,16 +561,23 @@ object AngConfigManager {
             val proxyPassword = SettingsManager.getSocksPassword()
 
             // Our own link is fetched with Encrypted Client Hello enforced (EthaEchFetch): on the phone's own network
-            // and, failing that, through the tunnel. Only when nobody answered on either way does the plain client
-            // below fetch it once, the host's name in the clear, as every version before 1.3.6 did — the operator's
-            // last resort for a network that blocks ECH itself. An answer of any status is final: no plain fetch
-            // after it. Any other provider's link: as upstream fetches it.
+            // and, failing that, through the tunnel. When nobody answered on either way: through the link hop inside
+            // Iran (EthaHopFetch — plain, the hop's name is not listed, dialled at its address). Only when nobody
+            // answered on any of those does the plain client below fetch it once, the host's name in the clear, as
+            // every version before 1.3.6 did — the operator's last resort for a network that blocks ECH itself. An
+            // answer of any status is final: no further way after it. Any other provider's link: as upstream fetches it.
             val ours = EthaSubscription.isSubLink(url)
             var answered = false
             var response = if (ours) {
                 val ech = EthaEchFetch.fetch(url, it.guid, userAgent)
                 answered = ech.answered
-                ech.response ?: UrlContentResponse("")
+                var got = ech.response
+                if (!answered) {
+                    val hop = EthaHopFetch.fetch(EthaSubscription.tokenOf(url).orEmpty(), userAgent)
+                    answered = hop.answered
+                    got = hop.response
+                }
+                got ?: UrlContentResponse("")
             } else try {
                 val httpPort = SettingsManager.getHttpPort()
                 HttpUtil.getUrlContentWithHeaders(
@@ -588,7 +595,7 @@ object AngConfigManager {
                 UrlContentResponse("")
             }
             if (response.body.isEmpty() && !answered) {
-                if (ours) LogUtil.w(AppConfig.TAG, "ECH got no answer on either way: fetching the link without it, the last resort")
+                if (ours) LogUtil.w(AppConfig.TAG, "ECH and the hop got no answer: fetching the link without them, the last resort")
                 response = try {
                     val plain = HttpUtil.getUrlContentWithHeaders(
                         UrlContentRequest(
@@ -614,6 +621,7 @@ object AngConfigManager {
                 // The account card: days and data left, a notice, the support link — from the
                 // response headers. A header that is missing or broken leaves the profile alone.
                 EthaSubscription.applyHeaders(it.subscription, response.headers)
+                if (ours) EthaHopFetch.remember(response.headers)   // where the link hop inside Iran is now, for the next time nothing else answers
                 MmkvManager.encodeSubscription(it.guid, it.subscription)
                 LogUtil.i(AppConfig.TAG, "Subscription updated: ${it.subscription.remarks}, $count configs")
                 return SubscriptionUpdateResult(

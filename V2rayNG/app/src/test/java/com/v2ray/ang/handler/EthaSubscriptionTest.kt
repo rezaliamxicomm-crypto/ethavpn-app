@@ -215,4 +215,13 @@ class EthaSubscriptionTest {
         assertEquals("205 MB", EthaSubscription.quotaText(214748365L, Locale.US))        // the trial's 0.2 GB
         assertEquals("512 KB", EthaSubscription.quotaText(512 * 1024L, Locale.US))
     }
+
+    @Test
+    fun hopLinksMoveToTheCurrentAddressToo() {
+        assertEquals("https://fra.skyrayconfig.org/sub/0123456789abcdef", EthaSubscription.migratedUrl("https://www.harlow-systems.org/sub/0123456789abcdef"))
+        assertEquals("https://fra.skyrayconfig.org/sub/0123456789abcdef#N", EthaSubscription.migratedUrl("https://harlow-systems.org/sub/0123456789abcdef#N"))
+        assertEquals("https://fra.skyrayconfig.org/sub/0123456789abcdef", EthaSubscription.extractSubLink("لینک: https://www.harlow-systems.org/sub/0123456789abcdef ."))
+        assertFalse(EthaSubscription.isSubLink("https://www.harlow-systems.org/sub/0123456789abcdef"))   // ours, but never used as it is
+        assertTrue(EthaSubscription.sameAccount("https://www.harlow-systems.org/sub/0123456789abcdef", "https://fra.skyrayconfig.org/sub/0123456789abcdef#X"))
+    }
 }

@@ -13,15 +13,16 @@ data class EchFetchRequest(
     val proxy: String = "",                           // "127.0.0.1:port" of the running tunnel's local proxy: the fetch goes through it
     val proxyUser: String = "",                       // its account, when the customer set one
     val proxyPassword: String = "",
+    val plain: Boolean = false,                       // no ECH: a plain TLS fetch to `addresses`, the url's host as the certificate's name (the link hop inside Iran)
 )
 
-/** What it returns: the answer, or why there is none. echAccepted is true on every answer; a request is never sent without it. */
+/** What it returns: the answer, or why there is none. echAccepted is true on every ECH answer (a request is never sent without it); false on a plain one, whose keySource is "plain". */
 data class EchFetchResult(
     val status: Int = 0,
     val headers: Map<String, String>? = null,         // names lower-cased, the last value of a repeated header
     val body: String? = null,
     val echAccepted: Boolean = false,
     val address: String? = null,
-    val keySource: String? = null,                    // "dns:<resolver>", "pinned" or "retry"
+    val keySource: String? = null,                    // "dns:<resolver>", "pinned" or "retry"; "plain" when no ECH was asked
     val error: String? = null,
 )

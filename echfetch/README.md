@@ -5,9 +5,13 @@ own link. Here ECH is enforced — once a key is set Go's TLS never falls back t
 clear, and the request is written only after the server has accepted ECH; nothing in this directory
 states the link host's name in the clear. Standard library only.
 
-The apps call it twice at most (the two ways out below). Only when neither call got an answer does
-an app fetch the link once more as it did before, without ECH: the operator's last resort for a
-network that blocks ECH itself. That last fetch is the app's own code, not this directory's.
+The apps call it twice with ECH (the two ways out below) and then, when neither call got an answer,
+once more per link hop with `"plain": true` — the one way here without ECH, for the hop inside Iran
+whose name is not listed and whose certificate is public: the addresses given are dialled as they
+are (no DNS), the url's host serves the certificate check alone. Only when that got no answer either
+does an app fetch the link once more as it did before 1.3.6, without ECH and by name: the operator's
+last resort for a network that blocks ECH itself. That last fetch is the app's own code, not this
+directory's.
 
 This directory is the same, file for file, in both repositories (`ethavpn-app`, `skyray-ios`): change
 it in both. Android compiles `echfetch.go` into `libv2ray` (`package libv2ray`, the
