@@ -55,6 +55,7 @@ class EthaHopFetchTest {
         assertEquals(mapOf("a" to "b"), EthaHopFetch.toResponse(EchFetchResult(status = 200, body = "x", headers = mapOf("a" to "b")))?.headers)
         assertNull(EthaHopFetch.toResponse(EchFetchResult(status = 403, body = "x")))
         assertNull(EthaHopFetch.toResponse(EchFetchResult(status = 200, body = "")))
-        assertEquals("status 403", EthaEchFetch.describe(EchFetchResult(status = 403, keySource = "plain")))   // not "ECH not accepted"
+        assertEquals("status 403", EthaEchFetch.describe(EchFetchResult(status = 403, body = "x", keySource = "plain")))   // a plain answer: never "ECH not accepted"
+        assertEquals("status 403, empty body", EthaEchFetch.describe(EchFetchResult(status = 403, keySource = "plain")))
     }
 }
