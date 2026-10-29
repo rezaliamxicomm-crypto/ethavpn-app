@@ -42,8 +42,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isRunning by lazy { MutableLiveData<Boolean>() }
     val updateListAction by lazy { MutableLiveData<Int>() }
     val updateTestResultAction by lazy { MutableLiveData<String>() }
-    /** The moment a "real delay all" batch finished (Home connects with the best line then). */
+    /** The moment a batch of measurements finished (the picker re-renders, Home marks the results fresh). */
     val testsFinished by lazy { MutableLiveData<Long>() }
+    /** The service moved new connections to another line (its guid): Auto's own move, or the customer's pick applied. */
+    val lineSwitched by lazy { MutableLiveData<String>() }
+    /** The round the customer asked for ended: "switched:<guid>" or "kept:<guid>" (EthaAuto). */
+    val roundDone by lazy { MutableLiveData<String>() }
 
     /**
      * Refer to the official documentation for [registerReceiver](https://developer.android.com/reference/androidx/core/content/ContextCompat#registerReceiver(android.content.Context,android.content.BroadcastReceiver,android.content.IntentFilter,int):
@@ -472,6 +476,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         onTestsFinished()
                         testsFinished.value = System.currentTimeMillis()
                     }
+                }
+
+                AppConfig.MSG_ETHA_SWITCHED -> {
+                    lineSwitched.value = intent.getStringExtra("content").orEmpty()
+                    updateListAction.value = -1
+                }
+
+                AppConfig.MSG_ETHA_ROUND_DONE -> {
+                    roundDone.value = intent.getStringExtra("content").orEmpty()
                 }
             }
         }

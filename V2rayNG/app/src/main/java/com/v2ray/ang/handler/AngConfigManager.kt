@@ -621,6 +621,7 @@ object AngConfigManager {
                 // The account card: days and data left, a notice, the support link — from the
                 // response headers. A header that is missing or broken leaves the profile alone.
                 EthaSubscription.applyHeaders(it.subscription, response.headers)
+                response.headers[AppConfig.ETHA_AUTO_HEADER]?.let { v -> MmkvManager.encodeSettings(AppConfig.PREF_ETHA_AUTO_POLICY, v.trim()) }   // Auto's policy (AutoPolicy)
                 if (ours) EthaHopFetch.remember(response.headers)   // where the link hop inside Iran is now, for the next time nothing else answers
                 MmkvManager.encodeSubscription(it.guid, it.subscription)
                 LogUtil.i(AppConfig.TAG, "Subscription updated: ${it.subscription.remarks}, $count configs")

@@ -38,6 +38,7 @@ import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.AutoSelect
 import com.v2ray.ang.handler.EthaSubscription
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.handler.RatePrompt
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
@@ -63,7 +64,6 @@ class HomeActivity : HelperBaseActivity() {
         const val EXTRA_LINK = "etha_link"
         const val EXTRA_TEST = "etha_test"          // Settings asked for a "test again"
         private const val CONNECT_GUARD_MS = 25_000L
-        private const val TEST_GUARD_MS = 60_000L
         private val PROBE_OK = Regex("\\d+\\s*(ms|мс)")   // the probe's answer with a time (en, fa, ru); any other answer is a failure
     }
 
@@ -73,7 +73,7 @@ class HomeActivity : HelperBaseActivity() {
     private var connecting = false        // waiting for the core to report started / stopped
     private var refreshingQuietly = false // a background subscription refresh is running
     private var clipboardTried: String? = null   // the link last taken from the clipboard (no second import of the same one)
-    private var pendingConnect = false    // waiting for a real-delay batch to pick the line
+    private var pingAsked = false         // the customer pressed Ping all (or chose Auto again): the outcome is said when the round ends
     private var updateResult: CheckUpdateResult? = null
     private var serverSheet: ServerSheet? = null   // the open server sheet, re-rendered as pings land
     private var pulse: AnimatorSet? = null         // the halo's slow breath while connected
@@ -133,32 +133,44 @@ class HomeActivity : HelperBaseActivity() {
         mainViewModel.updateListAction.observe(this) { renderServerPanel(); serverSheet?.render() }
         mainViewModel.testsFinished.observe(this) {
             AutoSelect.markTested()
-            if (pendingConnect) {
-                pendingConnect = false
-                connectWithBest()
-            } else {
-                // The line changes only when the customer connects (Auto picks the fastest then) or picks one by
-                // hand: a test never moves a live connection (operator's rule, 2026-09-30). Auto and disconnected:
-                // the selection moves to the best so the next Connect uses it. Either way the outcome is said —
-                // a "Ping all" that changes nothing visible looked broken.
-                val s = sub
-                if (s != null && !isPinned()) {
-                    val best = AutoSelect.pickBest(s.guid)
-                    val running = mainViewModel.isRunning.value == true
-                    val moved = best != null && best != MmkvManager.getSelectServer()
-                    if (moved && !running) MmkvManager.setSelectServer(best!!)
-                    val name = best?.let { MmkvManager.decodeServerConfig(it)?.remarks }?.let { ServerPicker.displayName(it) }
+            // Connected, the service decides and says what it did (lineSwitched, roundDone). Disconnected and in Auto,
+            // the selection moves to the best so the next Connect starts on it; a test never moves a live connection by
+            // itself — Auto's own moves come from the service's rules (EthaAuto).
+            val s = sub
+            if (s != null && mainViewModel.isRunning.value != true) {
+                val best = if (isPinned()) null else AutoSelect.pickBest(s.guid)
+                if (best != null) MmkvManager.setSelectServer(best)
+                if (pingAsked) {
+                    pingAsked = false
+                    val name = (best ?: MmkvManager.getSelectServer())?.let { MmkvManager.decodeServerConfig(it)?.remarks }?.let { ServerPicker.displayName(it) }
                     when {
                         name == null -> toastError(R.string.etha_no_line)
-                        moved && running -> toastSuccess(getString(R.string.etha_ping_faster, name))
+                        isPinned() -> toast(getString(R.string.etha_ping_kept, name))
                         else -> toastSuccess(getString(R.string.etha_ping_best, name))
                     }
-                } else if (s != null) {
-                    val kept = MmkvManager.getSelectServer()?.let { MmkvManager.decodeServerConfig(it)?.remarks }?.let { ServerPicker.displayName(it) }
-                    if (kept != null) toast(getString(R.string.etha_ping_kept, kept))
                 }
-                render()
             }
+            render()
+            serverSheet?.render()
+        }
+        mainViewModel.lineSwitched.observe(this) { guid ->
+            lastProbe = null   // the chip's number was the previous line's
+            MmkvManager.decodeServerConfig(guid)?.remarks?.let { toast(getString(R.string.etha_switched, ServerPicker.displayName(it))) }
+            render()
+            serverSheet?.render()
+            mainViewModel.testCurrentServerRealPing()
+        }
+        mainViewModel.roundDone.observe(this) { outcome ->
+            pingAsked = false
+            val name = outcome.substringAfter(':', "").let { MmkvManager.decodeServerConfig(it)?.remarks }?.let { ServerPicker.displayName(it) }
+            when {
+                name == null -> toastError(R.string.etha_no_line)
+                outcome.startsWith("switched") -> toastSuccess(getString(R.string.etha_switched, name))
+                isPinned() -> toast(getString(R.string.etha_ping_kept, name))
+                else -> toastSuccess(getString(R.string.etha_ping_best, name))
+            }
+            render()
+            serverSheet?.render()
         }
         mainViewModel.startListenBroadcast()
         mainViewModel.initAssets(assets)
@@ -207,7 +219,7 @@ class HomeActivity : HelperBaseActivity() {
 
     /** Returns true when the clipboard had text (a link or not) — false means nothing came back. */
     private fun importFromClipboard(): Boolean {
-        if (sub != null || connecting || pendingConnect) return true
+        if (sub != null || connecting) return true
         val text = clipboardText()
         if (text.isBlank()) return false
         val link = EthaSubscription.extractSubLink(text) ?: return true
@@ -241,7 +253,6 @@ class HomeActivity : HelperBaseActivity() {
         val running = mainViewModel.isRunning.value == true
         binding.tvState.text = getString(
             when {
-                pendingConnect -> R.string.etha_state_finding
                 connecting -> R.string.etha_state_connecting
                 running -> R.string.etha_state_connected
                 else -> R.string.etha_state_not_connected
@@ -249,11 +260,11 @@ class HomeActivity : HelperBaseActivity() {
         )
         // One of three under the state, in a slot that keeps the hint's two lines of height (so the Connect button
         // never moves): the hint ("Tap to connect" + what Auto does), connected the chip, busy the spinner alone.
-        val busy = connecting || pendingConnect
+        val busy = connecting
         binding.tvConnectHint.visibility = if (!running && !busy) View.VISIBLE else View.INVISIBLE
         binding.tvConnectHint.text = if (isPinned()) getString(R.string.etha_tap_to_connect)
             else getString(R.string.etha_tap_to_connect) + "\n" + getString(R.string.etha_auto_hint)
-        binding.btnConnect.isEnabled = !connecting && !pendingConnect
+        binding.btnConnect.isEnabled = !connecting
         binding.btnConnect.backgroundTintList = ColorStateList.valueOf(
             ContextCompat.getColor(this, if (running) R.color.etha_green else R.color.etha_blue)
         )
@@ -283,7 +294,7 @@ class HomeActivity : HelperBaseActivity() {
     /** The chip under the state while connected: the server and its last probe. */
     private fun renderChip() {
         val text = chipText()
-        binding.tvLine.isVisible = text.isNotEmpty() && !connecting && !pendingConnect
+        binding.tvLine.isVisible = text.isNotEmpty() && !connecting
         binding.tvLine.text = text
     }
 
@@ -319,26 +330,34 @@ class HomeActivity : HelperBaseActivity() {
 
     // ---------------------------------------------------------------- the server choice
 
-    /** A new choice while connected reconnects with it (Auto: the best line after a fresh test). */
+    /**
+     * A new choice while connected: a picked line takes the new connections at once, Auto chosen again measures every
+     * line and decides — the service does both through the running core (EthaAuto); nothing reconnects.
+     */
     private fun onServerChoiceChanged() {
         render()
         if (mainViewModel.isRunning.value != true) return
-        connecting = true
-        render()
-        CoreServiceManager.stopVService(this)
-        lifecycleScope.launch {
-            delay(700)
-            connecting = false
-            if (!isPinned()) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LAST_TEST, 0L)   // Auto: a fresh test before connecting
-            onConnectClick()
+        if (isPinned()) {
+            MmkvManager.getSelectServer()?.let { MessageUtil.sendMsg2Service(this, AppConfig.MSG_ETHA_SWITCH, it) }
+        } else {
+            pingAsked = true
+            MessageUtil.sendMsg2Service(this, AppConfig.MSG_ETHA_PING_ALL, "")
         }
     }
 
+    /** Ping all: connected, the service measures every line through the running core; disconnected, one throw-away core does. */
     private fun testAgain() {
         val s = sub ?: return
-        if (MmkvManager.decodeServerList(s.guid).isEmpty()) return
+        val lines = MmkvManager.decodeServerList(s.guid)
+        if (lines.isEmpty()) return
+        pingAsked = true
         toast(R.string.etha_state_finding)
-        mainViewModel.testAllRealPing()
+        if (mainViewModel.isRunning.value == true) {
+            MmkvManager.clearAllTestDelayResults(lines)
+            MessageUtil.sendMsg2Service(this, AppConfig.MSG_ETHA_PING_ALL, "")
+        } else {
+            mainViewModel.testAllRealPing()
+        }
         render()   // the cleared results show at once; each ping fills in as it lands
         serverSheet?.render()
     }
@@ -395,48 +414,23 @@ class HomeActivity : HelperBaseActivity() {
             guardConnecting()
             return
         }
+        // The line to start on: the pinned one; else the best of results younger than ETHA_DELAY_FRESH_MS; else the
+        // line used last; else the first. Nothing is waited for: the service measures every line through the running
+        // core as soon as the tunnel is up and moves new connections to a better one by itself (EthaAuto).
+        val lines = MmkvManager.decodeServerList(s.guid)
+        if (isPinned() && !EthaSubscription.selectedIsIn(s.guid)) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, false)
+        val selected = MmkvManager.getSelectServer()?.takeIf { EthaSubscription.selectedIsIn(s.guid) }
+        val start = when {
+            isPinned() -> selected
+            AutoSelect.resultsFresh() -> AutoSelect.pickBest(s.guid) ?: selected
+            else -> selected
+        } ?: lines.firstOrNull()
+        if (start == null) {
+            toastError(R.string.etha_no_line)
+            return
+        }
+        MmkvManager.setSelectServer(start)
         connecting = true
-        val selectedOk = EthaSubscription.selectedIsIn(s.guid)
-        when {
-            isPinned() && selectedOk -> startVpnFlow()
-            selectedOk && AutoSelect.resultsFresh() -> {
-                AutoSelect.pickBest(s.guid)?.let { MmkvManager.setSelectServer(it) }
-                startVpnFlow()
-            }
-            else -> {
-                // Test every line of the subscription through the core, then connect with the best.
-                pendingConnect = true
-                mainViewModel.testAllRealPing()
-                lifecycleScope.launch {
-                    delay(TEST_GUARD_MS)
-                    if (pendingConnect) {
-                        pendingConnect = false
-                        connectWithBest()
-                    }
-                }
-            }
-        }
-        render()
-    }
-
-    private fun connectWithBest() {
-        val s = sub ?: run { connecting = false; render(); return }
-        val best = AutoSelect.pickBest(s.guid)
-        if (best != null) {
-            MmkvManager.setSelectServer(best)
-        } else {
-            // Nothing answered the test: try the line we had, or the first one, rather than give up.
-            val fallback = MmkvManager.getSelectServer()?.takeIf { EthaSubscription.selectedIsIn(s.guid) }
-                ?: MmkvManager.decodeServerList(s.guid).firstOrNull()
-            if (fallback == null) {
-                connecting = false
-                render()
-                toastError(R.string.etha_no_line)
-                return
-            }
-            toast(R.string.etha_no_line)
-            MmkvManager.setSelectServer(fallback)
-        }
         startVpnFlow()
     }
 
@@ -578,7 +572,7 @@ class HomeActivity : HelperBaseActivity() {
                     toastError(R.string.import_subscription_failure)
                 } else {
                     toastSuccess(R.string.etha_link_added)
-                    if (mainViewModel.isRunning.value != true && !connecting && !pendingConnect) onConnectClick()
+                    if (mainViewModel.isRunning.value != true && !connecting) onConnectClick()
                 }
             }
         }

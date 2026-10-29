@@ -2,6 +2,7 @@ package com.v2ray.ang.service
 
 import android.content.Context
 import com.v2ray.ang.core.CoreConfigManager
+import com.v2ray.ang.core.EthaAuto
 import com.v2ray.ang.core.CoreNativeManager
 import com.v2ray.ang.dto.RealPingEvent
 import com.v2ray.ang.enums.EConfigType
@@ -38,6 +39,32 @@ class RealPingWorkerService(
     private val totalCount = AtomicInteger(0)
 
     fun start() {
+        // SkyRay's Auto: the lines of one subscription are measured through one throw-away core (EthaAuto.measureOffline)
+        // instead of one core per line, the way the service measures them while the tunnel is up; anything else, or a
+        // core that would not build, takes the one-by-one path below.
+        if (guids.size >= 2 && EthaAuto.usable(guids).size == guids.size) {
+            scope.launch {
+                try {
+                    val measured = EthaAuto.measureOffline(context, guids)
+                    if (measured == null) {
+                        startEach()
+                        return@launch
+                    }
+                    onEvent(RealPingEvent.Progress("0 / ${guids.size}"))
+                    for (guid in guids) onEvent(RealPingEvent.Result(guid, measured[guid] ?: -1L))
+                    onEvent(RealPingEvent.Finish("0"))
+                    close()
+                } catch (_: CancellationException) {
+                    onEvent(RealPingEvent.Finish("-1"))
+                    close()
+                }
+            }
+            return
+        }
+        startEach()
+    }
+
+    private fun startEach() {
         val jobs = guids.map { guid ->
             totalCount.incrementAndGet()
             scope.launch {

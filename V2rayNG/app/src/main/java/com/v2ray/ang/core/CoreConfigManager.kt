@@ -53,6 +53,39 @@ object CoreConfigManager {
      *
      * The core flow is reused, then non-essential sections are removed.
      */
+    /**
+     * SkyRay's Auto (core/EthaAuto): one configuration holding every line given as the members of a random balancer,
+     * `AppConfig.TAG_BALANCER`, which the service holds to one line at a time, with the inbound counters on for the
+     * service's stall detector. The line at index i of the usable lines is the outbound
+     * `policyGroupMemberTag(TAG_PROXY, i, remarks)` (EthaAuto.usable builds the same list).
+     */
+    fun getV2rayConfigForLines(context: Context, guids: List<String>): ConfigResult {
+        try {
+            val configContext = CoreConfigContextBuilder.buildForLines(context, guids)
+                ?: return ConfigResult(status = false, guid = guids.firstOrNull().orEmpty(), errorMessage = "No line to build a config from")
+            val v2rayConfig = buildUnifiedConfig(configContext)
+            val policy = v2rayConfig.policy ?: V2rayConfig.PolicyBean(levels = emptyMap())
+            val system = (policy.system as? Map<*, *>)?.entries?.associate { it.key.toString() to it.value }?.toMutableMap() ?: mutableMapOf()
+            system["statsInboundUplink"] = true
+            system["statsInboundDownlink"] = true
+            policy.system = system
+            v2rayConfig.policy = policy
+            return toConfigResult(configContext, v2rayConfig)
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "Failed to get the V2ray config for the lines", e)
+            return ConfigResult(status = false, guid = guids.firstOrNull().orEmpty(),
+                errorMessage = "Failed to get the V2ray config for the lines: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * A policy group's member outbound: proxy, the group's tag, the member's index from 1 and its name — without the
+     * characters the service's measurement list uses to separate entries (`,` `;` `=`), which an EthaVPN name never
+     * carries. EthaAuto measures the members by these tags.
+     */
+    fun policyGroupMemberTag(groupTag: String, index: Int, remarks: String): String =
+        "${AppConfig.TAG_PROXY}-$groupTag-${index + 1}-${remarks.trim().replace(Regex("[,;=]"), "_")}"
+
     fun getV2rayConfig4Speedtest(context: Context, guid: String): ConfigResult {
         try {
             val configContext = CoreConfigContextBuilder.build(context, guid)
@@ -346,7 +379,7 @@ object CoreConfigManager {
         val memberTagPrefix = "${AppConfig.TAG_PROXY}-${resolvedOutbound.tag}-"
         val membersToAdd = mutableListOf<V2rayConfig.OutboundBean>()
         memberPairs.forEachIndexed { index, (outbound, profile) ->
-            val memberTag = "$memberTagPrefix${index + 1}-${profile.remarks.trim()}"
+            val memberTag = policyGroupMemberTag(resolvedOutbound.tag, index, profile.remarks)
             if (memberTag in existingTags) {
                 return@forEachIndexed
             }

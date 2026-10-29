@@ -1,1 +1,1 @@
-Refreshing your subscription now also works through an address inside Iran when the usual way is blocked, and the app accepts the Iran link from the bot. Nothing to do on your side.
+Connecting is immediate: the app no longer tests every server before it connects. It connects on the best server it knows, measures all of them in the background and moves new connections to a clearly faster one by itself, without cutting what is open. A server that stops answering is left within seconds. Ping all no longer interrupts the connection.

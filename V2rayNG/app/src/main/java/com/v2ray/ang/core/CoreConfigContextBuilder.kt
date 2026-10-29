@@ -4,6 +4,7 @@ import android.content.Context
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.dto.CoreConfigContext
 import com.v2ray.ang.dto.entities.ProfileItem
+import com.v2ray.ang.enums.BalancerStrategyType
 import com.v2ray.ang.enums.CoreResolvedType
 import com.v2ray.ang.enums.EConfigType
 import com.v2ray.ang.extension.isComplexType
@@ -58,6 +59,34 @@ object CoreConfigContextBuilder {
      *
      * Custom profiles are ignored at this stage and produce no entry.
      */
+    /**
+     * SkyRay's Auto (CoreConfigManager.getV2rayConfigForLines): the lines given, in their order, as the members of one
+     * policy group with the random strategy — a balancer the service holds to one line — beside the routing outbounds
+     * and DNS rules every configuration gets. Null when no line can be built.
+     */
+    fun buildForLines(context: Context, guids: List<String>): CoreConfigContext? {
+        val members = guids.mapNotNull { MmkvManager.decodeServerConfig(it) }
+            .filter { !it.configType.isComplexType() && it.server.isNotNullEmpty() }
+        val first = members.firstOrNull() ?: return null
+        val group = ProfileItem.create(EConfigType.POLICYGROUP).apply {
+            remarks = first.remarks
+            subscriptionId = first.subscriptionId
+            policyGroupType = BalancerStrategyType.RANDOM.policyGroupTypeValue
+        }
+        val primary = CoreConfigContext.ResolvedOutbound(
+            tag = AppConfig.TAG_PROXY,
+            profile = group,
+            resolvedProfiles = members,
+            resolvedType = CoreResolvedType.POLICYGROUP,
+        )
+        return CoreConfigContext(
+            context = context,
+            guid = guids.first(),
+            resolvedOutbounds = listOf(primary) + resolveRoutingOutbounds(),
+            routingDomainRules = collectRoutingDomainRulesForDns(),
+        )
+    }
+
     private fun resolveOutbound(tag: String, profile: ProfileItem): CoreConfigContext.ResolvedOutbound? {
         if (profile.configType == EConfigType.CUSTOM) {
             return null

@@ -181,9 +181,13 @@ object AppConfig {
     const val ETHA_PLAY_URL = "https://play.google.com/store/apps/details?id=com.allion.skyray"
     const val ETHA_APPSTORE_URL = "https://apps.apple.com/app/id6809038308"
     const val ETHA_PRIVACY_URL = "https://allionapp.com/skyray-privacy"   // the store listing's privacy policy
-    const val ETHA_WATCHDOG_INTERVAL_MS = 180_000L           // probe the tunnel every 3 minutes while connected
-    const val ETHA_WATCHDOG_FAILURES = 2                     // consecutive failed probes before switching lines
-    const val ETHA_DELAY_FRESH_MS = 600_000L                 // real-delay results younger than this are reused on Connect
+    const val ETHA_DELAY_FRESH_MS = 600_000L                 // measured delays younger than this choose the line Connect starts on
+    // SkyRay's Auto (core/EthaAuto, handler/AutoPolicy): the running core holds every line of the subscription behind
+    // one balancer, the service measures the lines through it and holds the balancer to the best, so a change of line
+    // moves new connections only. The policy's numbers default in AutoPolicy; the service's header X-Etha-Auto
+    // replaces them on the next fetch (its last value kept here), so they change without a release.
+    const val ETHA_AUTO_HEADER = "x-etha-auto"
+    const val PREF_ETHA_AUTO_POLICY = "pref_etha_auto_policy"
     const val ETHA_UPDATE_CHECK_MS = 86_400_000L             // ask /dl/latest.json at most once a day
     const val PREF_ETHA_PINNED = "pref_etha_pinned"          // a line chosen by hand: no auto-select, no auto-switch
     const val PREF_ETHA_EXPERT = "pref_etha_expert"          // seven taps on the version: the v2rayNG UI appears in Settings
@@ -245,6 +249,10 @@ object AppConfig {
     const val MSG_MEASURE_CONFIG_SUCCESS = 72
     const val MSG_MEASURE_CONFIG_NOTIFY = 73
     const val MSG_MEASURE_CONFIG_FINISH = 74
+    const val MSG_ETHA_SWITCH = 81          // UI → service: new connections take this line (content: its guid) — a pick by hand
+    const val MSG_ETHA_PING_ALL = 82        // UI → service: measure every line now and decide (Ping all, Auto chosen again)
+    const val MSG_ETHA_SWITCHED = 83        // service → UI: new connections take this line (content: its guid)
+    const val MSG_ETHA_ROUND_DONE = 84      // service → UI: the round the customer asked for ended ("switched:<guid>" | "kept:<guid>")
 
     /** Notification channel IDs and names. */
     const val RAY_NG_CHANNEL_ID = "RAY_NG_M_CH_ID"
