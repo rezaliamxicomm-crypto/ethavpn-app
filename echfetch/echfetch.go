@@ -303,7 +303,7 @@ func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, us
 }
 
 // echExchange is the request and its answer on an open TLS connection, the same for both ways.
-func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent string, headers map[string]string) (echFetchResult, error) {
+func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent string, extra map[string]string) (echFetchResult, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+host+requestURI, nil)
 	if err != nil {
 		return echFetchResult{}, err
@@ -314,7 +314,7 @@ func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent
 	}
 	httpReq.Header.Set("Accept", "*/*")
 	httpReq.Header.Set("Connection", "close")
-	for k, v := range headers { // the app's own (X-Etha-Lines); never the ones this exchange sets
+	for k, v := range extra { // the app's own (X-Etha-Lines); never the ones this exchange sets
 		if k = strings.TrimSpace(k); k == "" || strings.EqualFold(k, "Host") || strings.EqualFold(k, "User-Agent") || strings.EqualFold(k, "Connection") {
 			continue
 		}
