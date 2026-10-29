@@ -9,8 +9,6 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-                </LinearLayout>
-
         <LinearLayout
             android:id="@+id/layout_bypass_apps"
             style="@style/EthaSettingsRow">
