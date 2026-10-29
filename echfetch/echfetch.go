@@ -52,20 +52,20 @@ import (
 )
 
 type echFetchRequest struct {
-	URL           string   `json:"url"`
-	Addresses     []string `json:"addresses"`       // Cloudflare addresses to try first (the stored lines' clean ones)
-	Pinned        []string `json:"pinnedAddresses"` // tried last
-	Resolvers     []string `json:"resolvers"`       // asked over plain UDP 53 for the HTTPS record; "ip" or "ip:port"
-	LookupName    string   `json:"lookupName"`      // whose HTTPS record carries the key; empty: the url's host
-	PinnedKey     string   `json:"pinnedKey"`       // base64 ECHConfigList, offered when no resolver delivers one
-	UserAgent     string   `json:"userAgent"`
-	TimeoutMs     int64    `json:"timeoutMs"`
-	Interface     string   `json:"interface"`     // bind every socket to this interface (past a running tunnel)
-	Proxy         string   `json:"proxy"`         // "host:port" of a local HTTP proxy to connect through (the running tunnel's)
-	ProxyUser     string   `json:"proxyUser"`     // its account, when it asks for one
-	ProxyPassword string   `json:"proxyPassword"` //
-	Headers       map[string]string `json:"headers"` // extra request headers, sent on every way (X-Etha-Lines: what Auto measured)
-	Plain         bool     `json:"plain"`         // no ECH: a plain TLS fetch to the addresses given, the url's host as the certificate's name (the link hop inside Iran)
+	URL           string            `json:"url"`
+	Addresses     []string          `json:"addresses"`       // Cloudflare addresses to try first (the stored lines' clean ones)
+	Pinned        []string          `json:"pinnedAddresses"` // tried last
+	Resolvers     []string          `json:"resolvers"`       // asked over plain UDP 53 for the HTTPS record; "ip" or "ip:port"
+	LookupName    string            `json:"lookupName"`      // whose HTTPS record carries the key; empty: the url's host
+	PinnedKey     string            `json:"pinnedKey"`       // base64 ECHConfigList, offered when no resolver delivers one
+	UserAgent     string            `json:"userAgent"`
+	TimeoutMs     int64             `json:"timeoutMs"`
+	Interface     string            `json:"interface"`     // bind every socket to this interface (past a running tunnel)
+	Proxy         string            `json:"proxy"`         // "host:port" of a local HTTP proxy to connect through (the running tunnel's)
+	ProxyUser     string            `json:"proxyUser"`     // its account, when it asks for one
+	ProxyPassword string            `json:"proxyPassword"` //
+	Headers       map[string]string `json:"headers"`       // extra request headers, sent on every way (X-Etha-Lines: what Auto measured)
+	Plain         bool              `json:"plain"`         // no ECH: a plain TLS fetch to the addresses given, the url's host as the certificate's name (the link hop inside Iran)
 }
 
 type echFetchResult struct {
