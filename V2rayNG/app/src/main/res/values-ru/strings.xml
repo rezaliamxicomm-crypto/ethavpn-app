@@ -509,7 +509,7 @@
     <string name="etha_keep_line">Держать этот сервер</string>
     <string name="etha_link_invalid">Это не ссылка EthaVPN</string>
     <string name="etha_link_added">Подписка добавлена</string>
-    <string name="etha_no_line">Ни один сервер не ответил. Проверьте интернет и повторите.</string>
+    <string name="etha_no_line">Ни одна линия не ответила. Проверьте интернет и попробуйте снова.</string>
     <string name="etha_switched">Переключено на %s</string>
     <string name="etha_update_available">Доступна версия %s. Нажмите, чтобы обновить.</string>
     <string name="etha_update_required">Эта версия устарела. Нажмите, чтобы обновить.</string>
@@ -547,7 +547,7 @@
     <string name="etha_show_fewer">Свернуть ▴</string>
     <string name="etha_fastest">Самые быстрые</string>
     <string name="etha_auto_now">Сейчас %s</string>
-    <string name="etha_auto_hint">Авто выбирает самый быстрый сервер</string>
+    <string name="etha_auto_hint">Самая быстрая линия выбирается автоматически</string>
     <string name="etha_updated">Обновлено %s</string>
     <string name="etha_updated_never">Ещё не обновлялось</string>
     <string name="etha_privacy_policy">Политика конфиденциальности</string>
@@ -567,4 +567,16 @@
     <string name="etha_data_label_of">из %s использовано</string>
     <string name="etha_auto_picked">Авто · %s</string>
 
+    <!-- 2.0.0: the Home without line names (Test latency, Refresh, the three states) -->
+    <string name="etha_test_latency">Проверить задержку</string>
+    <string name="etha_testing">Проверка…</string>
+    <string name="etha_state_searching">Поиск линии…</string>
+    <string name="etha_no_line_answers">Ни одна линия не отвечает</string>
+    <string name="etha_searching_hint">Нажмите «Обновить». Не помогло? Нажмите «Поддержка».</string>
+    <string name="etha_switched_faster">Переключено на более быструю линию</string>
+    <string name="etha_on_fastest">Вы на самой быстрой линии</string>
+    <string name="etha_ready">Готово · самая быстрая линия выбрана для следующего подключения</string>
+    <string name="etha_ready_ms">Готово · %d мс</string>
+    <string name="etha_just_now">только что</string>
+    <string name="etha_refreshed">Конфиги обновлены</string>
 </resources>

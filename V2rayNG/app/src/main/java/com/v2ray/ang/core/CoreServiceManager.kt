@@ -299,7 +299,12 @@ object CoreServiceManager {
         NotificationManager.startSpeedNotification()
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core started successfully")
         auto?.stop()
-        auto = lines?.let { EthaAuto(service, coreController, it, guid).also { engine -> engine.start() } }
+        auto = lines?.let {
+            EthaAuto(service, coreController, it, guid, onLinesChanged = {
+                // a fetch while searching brought other lines: the core restarts on them (the same path as a settings change)
+                MessageUtil.sendMsg2Service(service, AppConfig.MSG_STATE_RESTART, "")
+            }).also { engine -> engine.start() }
+        }
     }
 
     /** Wi-Fi ↔ mobile: what Auto measured no longer holds; it measures again once the network has settled. */
@@ -550,10 +555,6 @@ object CoreServiceManager {
 
                 AppConfig.MSG_MEASURE_DELAY -> {
                     measureV2rayDelay()
-                }
-
-                AppConfig.MSG_ETHA_SWITCH -> {
-                    intent.getStringExtra("content")?.let { guid -> auto?.switchTo(guid, "picked") }
                 }
 
                 AppConfig.MSG_ETHA_PING_ALL -> {

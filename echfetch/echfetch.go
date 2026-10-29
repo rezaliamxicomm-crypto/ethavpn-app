@@ -64,6 +64,7 @@ type echFetchRequest struct {
 	Proxy         string   `json:"proxy"`         // "host:port" of a local HTTP proxy to connect through (the running tunnel's)
 	ProxyUser     string   `json:"proxyUser"`     // its account, when it asks for one
 	ProxyPassword string   `json:"proxyPassword"` //
+	Headers       map[string]string `json:"headers"` // extra request headers, sent on every way (X-Etha-Lines: what Auto measured)
 	Plain         bool     `json:"plain"`         // no ECH: a plain TLS fetch to the addresses given, the url's host as the certificate's name (the link hop inside Iran)
 }
 
@@ -193,7 +194,7 @@ func fetchSubscriptionEch(req echFetchRequest) echFetchResult {
 		if !time.Now().Before(deadline) {
 			break
 		}
-		res, err := echFetchOnce(host, port, u.RequestURI(), addr, key, keySource, req.UserAgent, route, deadline)
+		res, err := echFetchOnce(host, port, u.RequestURI(), addr, key, keySource, req.UserAgent, req.Headers, route, deadline)
 		if err == nil {
 			return res
 		}
@@ -203,7 +204,7 @@ func fetchSubscriptionEch(req echFetchRequest) echFetchResult {
 		var rej *tls.ECHRejectionError
 		if errors.As(err, &rej) && echValidConfigList(rej.RetryConfigList) {
 			key, keySource = rej.RetryConfigList, "retry"
-			if res, err = echFetchOnce(host, port, u.RequestURI(), addr, key, keySource, req.UserAgent, route, deadline); err == nil {
+			if res, err = echFetchOnce(host, port, u.RequestURI(), addr, key, keySource, req.UserAgent, req.Headers, route, deadline); err == nil {
 				return res
 			}
 			lastErr = err
@@ -226,7 +227,7 @@ func fetchPlain(req echFetchRequest, host, port, requestURI string, route echRou
 		if !time.Now().Before(deadline) {
 			break
 		}
-		res, err := plainFetchOnce(host, port, requestURI, addr, req.UserAgent, route, deadline)
+		res, err := plainFetchOnce(host, port, requestURI, addr, req.UserAgent, req.Headers, route, deadline)
 		if err == nil {
 			return res
 		}
@@ -235,7 +236,7 @@ func fetchPlain(req echFetchRequest, host, port, requestURI string, route echRou
 	return echFetchResult{Error: "plain: " + lastErr.Error()}
 }
 
-func plainFetchOnce(host, port, requestURI, addr, userAgent string, route echRoute, deadline time.Time) (echFetchResult, error) {
+func plainFetchOnce(host, port, requestURI, addr, userAgent string, headers map[string]string, route echRoute, deadline time.Time) (echFetchResult, error) {
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 	raw, err := echDial(ctx, route, net.JoinHostPort(addr, port))
@@ -256,7 +257,7 @@ func plainFetchOnce(host, port, requestURI, addr, userAgent string, route echRou
 		return echFetchResult{}, err
 	}
 	_ = raw.SetDeadline(deadline) // the exchange itself may take what is left
-	res, err := echExchange(ctx, conn, host, requestURI, userAgent)
+	res, err := echExchange(ctx, conn, host, requestURI, userAgent, headers)
 	if err != nil {
 		return echFetchResult{}, err
 	}
@@ -264,7 +265,7 @@ func plainFetchOnce(host, port, requestURI, addr, userAgent string, route echRou
 	return res, nil
 }
 
-func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, userAgent string, route echRoute, deadline time.Time) (echFetchResult, error) {
+func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, userAgent string, headers map[string]string, route echRoute, deadline time.Time) (echFetchResult, error) {
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 	raw, err := echDial(ctx, route, net.JoinHostPort(addr, port))
@@ -293,7 +294,7 @@ func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, us
 		return echFetchResult{}, errors.New("ech not accepted by " + addr)
 	}
 	_ = raw.SetDeadline(deadline) // the exchange itself may take what is left
-	res, err := echExchange(ctx, conn, host, requestURI, userAgent)
+	res, err := echExchange(ctx, conn, host, requestURI, userAgent, headers)
 	if err != nil {
 		return echFetchResult{}, err
 	}
@@ -302,7 +303,7 @@ func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, us
 }
 
 // echExchange is the request and its answer on an open TLS connection, the same for both ways.
-func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent string) (echFetchResult, error) {
+func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent string, headers map[string]string) (echFetchResult, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+host+requestURI, nil)
 	if err != nil {
 		return echFetchResult{}, err
@@ -313,6 +314,12 @@ func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent
 	}
 	httpReq.Header.Set("Accept", "*/*")
 	httpReq.Header.Set("Connection", "close")
+	for k, v := range headers { // the app's own (X-Etha-Lines); never the ones this exchange sets
+		if k = strings.TrimSpace(k); k == "" || strings.EqualFold(k, "Host") || strings.EqualFold(k, "User-Agent") || strings.EqualFold(k, "Connection") {
+			continue
+		}
+		httpReq.Header.Set(k, v)
+	}
 	if err := httpReq.Write(conn); err != nil {
 		return echFetchResult{}, err
 	}

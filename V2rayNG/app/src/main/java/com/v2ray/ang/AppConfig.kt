@@ -142,6 +142,12 @@ object AppConfig {
     const val ETHA_USER_AGENT = "SkyRay/${BuildConfig.VERSION_NAME} (android)"   // how the server knows this app fetched
     const val ETHA_SUB_UPDATE_MINUTES = 180L                 // = the API's Profile-Update-Interval: 3 h (the header wins after the first fetch)
     const val ETHA_SUB_STALE_MS = 3_600_000L                 // on open: refresh the subscription quietly when its last fetch is older than this
+    // Auto measures every line with two HEAD requests to the box's own probe target (a TEST-NET address Xray on the box
+    // sends to a 204 on loopback: no third party, no TLS, ~0.3 KB a probe); the fallback is tried once when no line
+    // answers the target, for a box that does not have it yet.
+    const val ETHA_PROBE_URL = "http://203.0.113.1/"
+    const val ETHA_PROBE_FALLBACK_URL = "https://www.gstatic.com/generate_204"
+    const val ETHA_LINES_HEADER = "X-Etha-Lines"              // what Auto measured, on the next fetch (EthaReport); the box stores it
     // Our own link is fetched with Encrypted Client Hello enforced (EthaEchFetch → the core's FetchSubscriptionEch,
     // echfetch/ in this repo), on the phone's own network and then through the tunnel; only when nobody answered on
     // either way is it fetched once more without ECH, the last resort (AngConfigManager.updateConfigViaSub). The ECH key (Cloudflare's configuration, one for every zone) is asked over plain
@@ -195,6 +201,10 @@ object AppConfig {
     const val PREF_ETHA_LAST_UPDATE_CHECK = "pref_etha_last_update_check"
     const val PREF_ETHA_DELETED_LINK = "pref_etha_deleted_link"   // "Delete account" removed it: never imported from the clipboard by itself again
     const val PREF_ETHA_LINK_HOPS = "pref_etha_link_hops"       // the service's last X-Etha-Link-Hops: where the link hop inside Iran is
+    const val PREF_ETHA_LINE_REPORT = "pref_etha_line_report"   // Auto's latest report (EthaReport), sent on the next fetch and cleared
+    const val PREF_ETHA_FETCH_WAY = "pref_etha_fetch_way:"      // + a network signature: which fetch way answered there last (EthaLinkFetch)
+    const val PREF_ETHA_LINES_FP = "pref_etha_lines_fp"         // the fingerprint of the line set the last fetch stored (EthaReport.fingerprint)
+    const val PREF_ETHA_LINES_CHANGED = "pref_etha_lines_changed"   // true after a fetch changed the line set: the running core must be restarted
     // The rating ask (handler/RatePrompt): the phone's, not the account's — "Delete account" leaves them
     const val PREF_ETHA_RATE_CONNECTS = "pref_etha_rate_connects"            // connections that worked, made by hand
     const val PREF_ETHA_RATE_FIRST_AT = "pref_etha_rate_first_at"            // when the first of them was
@@ -249,10 +259,11 @@ object AppConfig {
     const val MSG_MEASURE_CONFIG_SUCCESS = 72
     const val MSG_MEASURE_CONFIG_NOTIFY = 73
     const val MSG_MEASURE_CONFIG_FINISH = 74
-    const val MSG_ETHA_SWITCH = 81          // UI → service: new connections take this line (content: its guid) — a pick by hand
     const val MSG_ETHA_PING_ALL = 82        // UI → service: measure every line now and decide (Ping all, Auto chosen again)
     const val MSG_ETHA_SWITCHED = 83        // service → UI: new connections take this line (content: its guid)
-    const val MSG_ETHA_ROUND_DONE = 84      // service → UI: the round the customer asked for ended ("switched:<guid>" | "kept:<guid>")
+    const val MSG_ETHA_ROUND_DONE = 84      // service → UI: the round the customer asked for ended ("switched" | "kept" | "none")
+    const val MSG_ETHA_LATENCY = 85         // service → UI: the line in use was measured (content: ms, -1 failed)
+    const val MSG_ETHA_STATE = 86           // service → UI: "searching" (no line answers; Auto keeps trying) or "ok"
 
     /** Notification channel IDs and names. */
     const val RAY_NG_CHANNEL_ID = "RAY_NG_M_CH_ID"

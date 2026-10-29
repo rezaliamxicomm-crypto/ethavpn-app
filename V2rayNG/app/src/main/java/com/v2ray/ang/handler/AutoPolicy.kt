@@ -7,8 +7,8 @@ import com.v2ray.ang.AppConfig
  * subscription behind one balancer; the service measures the lines through that core (core/EthaAuto) and holds the
  * balancer to the best, so a change of line moves new connections only and cuts nothing that is open. The numbers
  * here are the policy's defaults; the service's header X-Etha-Auto ("round=180,failed=900,idle=600,margin=15,
- * floor=25,stall=8,timeout=5,conc=8,fresh=600") replaces any of them on the next fetch, so they change without a
- * release.
+ * floor=25,stall=8,timeout=5,conc=8,fresh=600,search=60,sfetch=300") replaces any of them on the next fetch, so they
+ * change without a release.
  */
 data class AutoPolicy(
     /** every line measured again this often, while the tunnel is in use */
@@ -29,11 +29,17 @@ data class AutoPolicy(
     val concurrency: Int = 8,
     /** results younger than this are trusted at Connect */
     val freshSec: Int = 600,
+    /** no line answers (the Searching state): every line measured again this often, in use or not */
+    val searchSec: Int = 60,
+    /** …and the subscription fetched again this often, for lines the box may have replaced */
+    val searchFetchSec: Int = 300,
 ) {
     val roundMs: Long get() = roundSec * 1000L
     val idleMs: Long get() = idleSec * 1000L
     val probeTimeoutMs: Long get() = probeTimeoutSec * 1000L
     val freshMs: Long get() = freshSec * 1000L
+    val searchMs: Long get() = searchSec * 1000L
+    val searchFetchMs: Long get() = searchFetchSec * 1000L
 
     /**
      * Should new connections move from the line in use (its last time, -1 failed, 0 not measured) to the best line
@@ -104,6 +110,8 @@ data class AutoPolicy(
                     "timeout" -> p = p.copy(probeTimeoutSec = v.coerceIn(2, 30))
                     "conc" -> p = p.copy(concurrency = v.coerceIn(1, 64))
                     "fresh" -> p = p.copy(freshSec = v.coerceIn(0, 86400))
+                    "search" -> p = p.copy(searchSec = v.coerceIn(15, 600))
+                    "sfetch" -> p = p.copy(searchFetchSec = v.coerceIn(60, 3600))
                 }
             }
             return p

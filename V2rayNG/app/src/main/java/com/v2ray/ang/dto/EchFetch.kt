@@ -13,6 +13,7 @@ data class EchFetchRequest(
     val proxy: String = "",                           // "127.0.0.1:port" of the running tunnel's local proxy: the fetch goes through it
     val proxyUser: String = "",                       // its account, when the customer set one
     val proxyPassword: String = "",
+    val headers: Map<String, String> = emptyMap(),   // extra request headers, every way (X-Etha-Lines)
     val plain: Boolean = false,                       // no ECH: a plain TLS fetch to `addresses`, the url's host as the certificate's name (the link hop inside Iran)
 )
 

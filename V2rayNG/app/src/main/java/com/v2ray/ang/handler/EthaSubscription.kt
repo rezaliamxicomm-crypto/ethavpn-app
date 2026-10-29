@@ -207,8 +207,15 @@ object EthaSubscription {
         MmkvManager.setSelectServer("")
         MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, false)
         MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LAST_TEST, 0L)
+        MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, "")
+        MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINES_FP, "")
+        MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINES_CHANGED, false)
         MmkvManager.encodeSettings(AppConfig.PREF_ETHA_DELETED_LINK, link)
     }
+
+    /** The fingerprint of a subscription's stored lines (EthaReport.fingerprint): the same set, whatever the ids. */
+    fun linesFingerprint(subId: String): String =
+        EthaReport.fingerprint(MmkvManager.decodeServerList(subId).mapNotNull { MmkvManager.decodeServerConfig(it) }.map { Triple(it.server, it.serverPort, it.remarks) })
 
     /** Whether the selected server belongs to this subscription. */
     fun selectedIsIn(subId: String): Boolean {

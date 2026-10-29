@@ -40,11 +40,12 @@ object EthaHopFetch {
     fun url(token: String, hop: Hop): String = "https://${hop.host}${AppConfig.ETHA_SUB_PATH}$token"
 
     /** Pure: the request the core gets — the hop's url, its address, no ECH, no proxy (the phone's own network). */
-    fun buildRequest(token: String, hop: Hop, userAgent: String?): EchFetchRequest = EchFetchRequest(
+    fun buildRequest(token: String, hop: Hop, userAgent: String?, headers: Map<String, String> = emptyMap()): EchFetchRequest = EchFetchRequest(
         url = url(token, hop),
         addresses = listOf(hop.ip),
         userAgent = userAgent?.trim()?.takeIf { it.isNotEmpty() } ?: AppConfig.ETHA_USER_AGENT,
         timeoutMs = TIMEOUT_MS,
+        headers = headers,
         plain = true,
     )
 
@@ -70,10 +71,10 @@ object EthaHopFetch {
     }
 
     /** `token`'s link fetched through the hops, one after the other, on the phone's network. */
-    fun fetch(token: String, userAgent: String?): EthaEchFetch.Outcome {
+    fun fetch(token: String, userAgent: String?, headers: Map<String, String> = emptyMap()): EthaEchFetch.Outcome {
         if (token.isEmpty()) return EthaEchFetch.Outcome(null, false)
         for (hop in hops()) {
-            val result = EthaEchFetch.call(buildRequest(token, hop, userAgent), "through the hop ${hop.host}")
+            val result = EthaEchFetch.call(buildRequest(token, hop, userAgent, headers), "through the hop ${hop.host}")
             if (answered(result)) return EthaEchFetch.Outcome(toResponse(result), true)
         }
         return EthaEchFetch.Outcome(null, false)

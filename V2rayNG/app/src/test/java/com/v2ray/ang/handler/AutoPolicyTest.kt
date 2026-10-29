@@ -74,4 +74,18 @@ class AutoPolicyTest {
         assertEquals(30, AutoPolicy.parse("margin=30", base = q).marginPct)
         assertEquals(120, AutoPolicy.parse("margin=30", base = q).roundSec)
     }
+
+    @Test
+    fun theSearchingCadenceComesFromTheHeaderToo() {
+        val d = AutoPolicy()
+        assertEquals(60, d.searchSec)
+        assertEquals(300, d.searchFetchSec)
+        val q = AutoPolicy.parse("search=30,sfetch=120")
+        assertEquals(30, q.searchSec)
+        assertEquals(120, q.searchFetchSec)
+        assertEquals(30_000L, q.searchMs)
+        val clamped = AutoPolicy.parse("search=1,sfetch=99999")
+        assertEquals(15, clamped.searchSec)
+        assertEquals(3600, clamped.searchFetchSec)
+    }
 }

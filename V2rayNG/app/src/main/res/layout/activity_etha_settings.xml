@@ -9,15 +9,7 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <LinearLayout
-            android:id="@+id/layout_server"
-            style="@style/EthaSettingsRow">
-            <ImageView style="@style/EthaSettingsIcon" app:srcCompat="@drawable/ic_routing_24dp" />
-            <LinearLayout style="@style/EthaSettingsText">
-                <TextView style="@style/EthaSettingsTitle" android:text="@string/etha_server_pick" />
-                <TextView android:id="@+id/tv_server_value" style="@style/EthaSettingsSummary" />
-            </LinearLayout>
-        </LinearLayout>
+                </LinearLayout>
 
         <LinearLayout
             android:id="@+id/layout_bypass_apps"

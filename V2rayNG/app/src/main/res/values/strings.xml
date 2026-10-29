@@ -512,7 +512,7 @@
     <string name="etha_keep_line">Keep this server</string>
     <string name="etha_link_invalid">That is not an EthaVPN link</string>
     <string name="etha_link_added">Subscription added</string>
-    <string name="etha_no_line">No server answered. Check your internet and try again.</string>
+    <string name="etha_no_line">No line answered. Check your internet and try again.</string>
     <string name="etha_switched">Switched to %s</string>
     <string name="etha_update_available">Version %s is available. Tap to update.</string>
     <string name="etha_update_required">This version is too old. Tap to update and keep connecting.</string>
@@ -550,7 +550,7 @@
     <string name="etha_show_fewer">Show fewer ▴</string>
     <string name="etha_fastest">Fastest</string>
     <string name="etha_auto_now">Now %s</string>
-    <string name="etha_auto_hint">Auto picks the fastest server</string>
+    <string name="etha_auto_hint">The fastest line is picked for you</string>
     <string name="etha_updated">Updated %s</string>
     <string name="etha_updated_never">Not updated yet</string>
     <string name="etha_privacy_policy">Privacy policy</string>
@@ -570,4 +570,16 @@
     <string name="etha_data_label_of">of %s used</string>
     <string name="etha_auto_picked">Auto · %s</string>
 
+    <!-- 2.0.0: the Home without line names (Test latency, Refresh, the three states) -->
+    <string name="etha_test_latency">Test latency</string>
+    <string name="etha_testing">Testing…</string>
+    <string name="etha_state_searching">Searching for a line…</string>
+    <string name="etha_no_line_answers">No line answers</string>
+    <string name="etha_searching_hint">Tap Refresh. Still nothing? Tap Support.</string>
+    <string name="etha_switched_faster">Switched to a faster line</string>
+    <string name="etha_on_fastest">On the fastest line</string>
+    <string name="etha_ready">Ready · the fastest line is set for the next connect</string>
+    <string name="etha_ready_ms">Ready · %d ms</string>
+    <string name="etha_just_now">just now</string>
+    <string name="etha_refreshed">Configs updated</string>
 </resources>

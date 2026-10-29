@@ -3,6 +3,7 @@ package com.v2ray.ang.handler
 import android.content.Context
 import android.graphics.Bitmap
 import android.text.TextUtils
+import com.v2ray.ang.AngApplication
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreConfigManager
@@ -568,16 +569,14 @@ object AngConfigManager {
             // answer of any status is final: no further way after it. Any other provider's link: as upstream fetches it.
             val ours = EthaSubscription.isSubLink(url)
             var answered = false
+            // What Auto measured rides on the fetch as X-Etha-Lines (EthaReport); it is cleared once a server answered.
+            val report = if (ours) MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_LINE_REPORT).orEmpty() else ""
+            val extraHeaders = if (report.isNotEmpty()) mapOf(AppConfig.ETHA_LINES_HEADER to report) else emptyMap()
             var response = if (ours) {
-                val ech = EthaEchFetch.fetch(url, it.guid, userAgent)
-                answered = ech.answered
-                var got = ech.response
-                if (!answered) {
-                    val hop = EthaHopFetch.fetch(EthaSubscription.tokenOf(url).orEmpty(), userAgent)
-                    answered = hop.answered
-                    got = hop.response
-                }
-                got ?: UrlContentResponse("")
+                val outcome = EthaLinkFetch.fetch(url, it.guid, userAgent, extraHeaders, EthaNetwork.signature(AngApplication.application))
+                answered = outcome.answered
+                if (answered && report.isNotEmpty()) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, "")
+                outcome.response ?: UrlContentResponse("")
             } else try {
                 val httpPort = SettingsManager.getHttpPort()
                 HttpUtil.getUrlContentWithHeaders(
@@ -615,8 +614,15 @@ object AngConfigManager {
                 return SubscriptionUpdateResult(failureCount = 1)
             }
 
+            val before = if (ours) EthaSubscription.linesFingerprint(it.guid) else ""
             val count = parseConfigViaSub(configText, it.guid, false)
             if (count > 0) {
+                if (ours) {
+                    // the running core holds the set it started with: a different set has to reach it (Home, the updater, Auto)
+                    val after = EthaSubscription.linesFingerprint(it.guid)
+                    MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINES_FP, after)
+                    if (before.isNotEmpty() && after != before) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINES_CHANGED, true)
+                }
                 it.subscription.lastUpdated = System.currentTimeMillis()
                 // The account card: days and data left, a notice, the support link — from the
                 // response headers. A header that is missing or broken leaves the profile alone.

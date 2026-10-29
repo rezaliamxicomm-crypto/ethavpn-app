@@ -16,6 +16,7 @@ import com.v2ray.ang.R
 import com.v2ray.ang.dto.entities.SubscriptionCache
 import com.v2ray.ang.enums.NotificationChannelType
 import com.v2ray.ang.util.LogUtil
+import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.util.NotificationHelper
 import java.util.concurrent.TimeUnit
 
@@ -186,6 +187,11 @@ object SubscriptionUpdater {
             LogUtil.i(AppConfig.TAG, "SubscriptionUpdater automatic update: ---${sub.subscription.remarks}")
             AngConfigManager.updateConfigViaSub(sub)
             EthaSubscription.mergeDuplicates()   // this fetch may have moved the link onto another copy's address
+            if (MmkvManager.decodeSettingsBool(AppConfig.PREF_ETHA_LINES_CHANGED, false)) {
+                // other lines than the running core holds: it restarts on them (nothing happens when it is not running)
+                MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINES_CHANGED, false)
+                MessageUtil.sendMsg2Service(applicationContext, AppConfig.MSG_STATE_RESTART, "")
+            }
 
             // Clear notification
             if (!quiet) NotificationHelper.cancel(NotificationChannelType.SUBSCRIPTION_UPDATE, applicationContext)

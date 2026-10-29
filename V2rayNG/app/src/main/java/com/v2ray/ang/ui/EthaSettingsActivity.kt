@@ -18,21 +18,16 @@ import com.v2ray.ang.util.Utils
 /**
  * The customer's settings: ten rows. Everything v2rayNG exposes stays in the code but is
  * reachable only through the `Advanced (v2rayNG)` row, which appears after seven taps on the
- * version line in About (expert mode, for the operator and support).
+ * version line in About (expert mode, for the operator and support). No line is picked here (2.0.0):
+ * the customer sees no line name; the operator picks one in the v2rayNG screens.
  */
 class EthaSettingsActivity : BaseActivity() {
-    companion object {
-        const val EXTRA_SERVER_CHANGED = "etha_server_changed"
-    }
-
     private val binding by lazy { ActivityEthaSettingsBinding.inflate(layoutInflater) }
-    private var serverChanged = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentViewWithToolbar(binding.root, showHomeAsUp = true, title = getString(R.string.title_settings))
 
-        binding.layoutServer.setOnClickListener { pickServer() }
         binding.layoutBypassApps.setOnClickListener {
             // bypass mode: the chosen apps go around the tunnel (banks, government services)
             MmkvManager.encodeSettings(AppConfig.PREF_PER_APP_PROXY, true)
@@ -61,38 +56,10 @@ class EthaSettingsActivity : BaseActivity() {
     override fun onResume() {
         super.onResume()
         binding.layoutAdvanced.isVisible = MmkvManager.decodeSettingsBool(AppConfig.PREF_ETHA_EXPERT, false)
-        binding.tvServerValue.text = ServerPicker.currentLabel(this, MmkvManager.decodeSettingsBool(AppConfig.PREF_ETHA_PINNED, false))
-        serverSheet?.render()
         val codes = resources.getStringArray(R.array.language_select_value)
         val names = resources.getStringArray(R.array.language_select)
         val code = MmkvManager.decodeSettingsString(AppConfig.PREF_LANGUAGE) ?: "auto"
         binding.tvLanguageValue.text = names.getOrNull(codes.indexOf(code).takeIf { it >= 0 } ?: 0)
-    }
-
-    private var serverSheet: ServerSheet? = null
-
-    private fun pickServer() {
-        val sub = EthaSubscription.find() ?: return
-        serverSheet = ServerPicker.show(
-            this, sub.guid, MmkvManager.decodeSettingsBool(AppConfig.PREF_ETHA_PINNED, false),
-            onPick = { guid ->
-                if (guid == null) {
-                    MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, false)
-                } else {
-                    MmkvManager.setSelectServer(guid)
-                    MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, true)
-                }
-                serverChanged = true
-                setResult(RESULT_OK, Intent().putExtra(EXTRA_SERVER_CHANGED, true))
-                binding.tvServerValue.text = ServerPicker.currentLabel(this, guid != null)
-            },
-            onTest = {
-                // the test itself runs from Home (it owns the view model); go back there
-                serverSheet?.dismiss()
-                setResult(RESULT_OK, Intent().putExtra(EXTRA_SERVER_CHANGED, serverChanged).putExtra(HomeActivity.EXTRA_TEST, true))
-                finish()
-            }
-        )
     }
 
     /** "Delete account": everything of the customer's on this phone, after one confirmation. */

@@ -127,4 +127,23 @@ class EthaEchFetchTest {
         assertTrue(!EthaEchFetch.answered(EchFetchResult(status = 200, body = "x", echAccepted = false)))
         assertTrue(!EthaEchFetch.answered(EchFetchResult(echAccepted = true)))
     }
+
+    @Test
+    fun onlyTheCloudflareLinesLendTheirAddresses() {
+        // since 2026-10-24 the first lines are the relays: their addresses answer with a cover site, never with ECH
+        val lines = listOf("tcp" to "45.1.2.3", "xhttp" to "104.21.67.176", "ws" to " 172.67.179.3 ", "xhttp" to null, "grpc" to "1.2.3.4", null to "5.6.7.8", "XHTTP" to "104.21.1.1")
+        assertEquals(listOf("104.21.67.176", "172.67.179.3", "104.21.1.1"), EthaEchFetch.addressesOf(lines))
+    }
+
+    @Test
+    fun theReportTravelsAsAHeaderOnEveryWay() {
+        val h = mapOf("X-Etha-Lines" to "v=1;t=1;trig=manual;use=;sw=0;l=XHTTP-api-CleanIP1-443:200")
+        val direct = EthaEchFetch.buildRequest("https://fra.skyrayconfig.org/sub/0123456789abcdef", emptyList(), null, headers = h)
+        val tunnel = EthaEchFetch.buildRequest("https://fra.skyrayconfig.org/sub/0123456789abcdef", emptyList(), null, EthaEchFetch.TunnelProxy("127.0.0.1:10808"), h)
+        assertEquals(h, direct.headers)
+        assertEquals(h, tunnel.headers)
+        assertEquals(h, EthaHopFetch.buildRequest("0123456789abcdef", EthaHopFetch.Hop("www.harlow-systems.org", "185.83.210.148"), null, h).headers)
+        assertTrue(com.v2ray.ang.util.JsonUtil.toJson(direct).contains("\"headers\":{\"X-Etha-Lines\":"))
+        assertEquals(emptyMap<String, String>(), EthaEchFetch.buildRequest("https://x/sub/y", emptyList(), null).headers)
+    }
 }

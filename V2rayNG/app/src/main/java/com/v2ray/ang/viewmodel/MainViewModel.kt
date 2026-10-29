@@ -48,6 +48,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val lineSwitched by lazy { MutableLiveData<String>() }
     /** The round the customer asked for ended: "switched:<guid>" or "kept:<guid>" (EthaAuto). */
     val roundDone by lazy { MutableLiveData<String>() }
+    /** The line in use was measured: ms, -1 failed (MSG_ETHA_LATENCY). */
+    val lineLatency by lazy { MutableLiveData<Long>() }
+    /** Auto's state: "searching" while no line answers, else "ok" (MSG_ETHA_STATE). */
+    val autoState by lazy { MutableLiveData<String>() }
 
     /**
      * Refer to the official documentation for [registerReceiver](https://developer.android.com/reference/androidx/core/content/ContextCompat#registerReceiver(android.content.Context,android.content.BroadcastReceiver,android.content.IntentFilter,int):
@@ -485,6 +489,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 AppConfig.MSG_ETHA_ROUND_DONE -> {
                     roundDone.value = intent.getStringExtra("content").orEmpty()
+                }
+
+                AppConfig.MSG_ETHA_LATENCY -> {
+                    lineLatency.value = intent.getStringExtra("content")?.toLongOrNull() ?: -1L
+                }
+
+                AppConfig.MSG_ETHA_STATE -> {
+                    autoState.value = intent.getStringExtra("content").orEmpty()
                 }
             }
         }

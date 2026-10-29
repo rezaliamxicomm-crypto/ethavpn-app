@@ -193,6 +193,10 @@
                     android:host="${subHost}"
                     android:pathPrefix="/sub/"
                     android:scheme="https" />
+                <!-- the link hop inside Iran, the address the links are handed out on since 2026-10-27: both names serve
+                     the statement (/opt/staging/hop-applinks); a name that does not would unverify them all on Android 11 -->
+                <data android:host="www.harlow-systems.org" />
+                <data android:host="harlow-systems.org" />
             </intent-filter>
         </activity>
         <activity

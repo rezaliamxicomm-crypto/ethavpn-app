@@ -30,6 +30,8 @@ object EthaEchFetch {
 
     /** Dead addresses cost a dial timeout each before the pinned ones get their turn. */
     const val MAX_STORED_ADDRESSES = 3
+    /** The transports whose lines dial a Cloudflare address: only those addresses serve the ECH fetch (a relay would answer with its cover site). */
+    val CLOUDFLARE_TRANSPORTS = setOf("xhttp", "splithttp", "ws", "httpupgrade")
 
     /** The tunnel's local proxy, for the fetch that goes through it. */
     data class TunnelProxy(val address: String, val user: String? = null, val password: String? = null)
@@ -41,12 +43,12 @@ object EthaEchFetch {
      * `url` fetched with ECH, on the phone's network and then through the tunnel. `response` is the body and headers
      * of a 2xx answer, else null (the reason is in the log); `answered` is false only when nobody answered on either way.
      */
-    fun fetch(url: String, subscriptionId: String?, userAgent: String?): Outcome {
+    fun fetch(url: String, subscriptionId: String?, userAgent: String?, headers: Map<String, String> = emptyMap()): Outcome {
         val stored = storedAddresses(subscriptionId)
-        val direct = call(buildRequest(url, stored, userAgent), "on the phone's network")
+        val direct = call(buildRequest(url, stored, userAgent, headers = headers), "on the phone's network")
         if (answered(direct)) return Outcome(toResponse(direct), true)   // the server answered, whatever it said: through the tunnel it says the same
         val proxy = TunnelProxy("127.0.0.1:${SettingsManager.getHttpPort()}", SettingsManager.getSocksUsername(), SettingsManager.getSocksPassword())
-        val tunnel = call(buildRequest(url, stored, userAgent, proxy), "through the tunnel")
+        val tunnel = call(buildRequest(url, stored, userAgent, proxy, headers), "through the tunnel")
         return Outcome(toResponse(tunnel), answered(tunnel))
     }
 
@@ -75,7 +77,7 @@ object EthaEchFetch {
         result != null && result.error.isNullOrEmpty() && result.echAccepted && result.status > 0
 
     /** Pure: the request the core gets — for the phone's own network, or with [proxy] for the way through the tunnel. */
-    fun buildRequest(url: String, stored: List<String>, userAgent: String?, proxy: TunnelProxy? = null): EchFetchRequest = EchFetchRequest(
+    fun buildRequest(url: String, stored: List<String>, userAgent: String?, proxy: TunnelProxy? = null, headers: Map<String, String> = emptyMap()): EchFetchRequest = EchFetchRequest(
         url = url,
         addresses = candidateAddresses(stored),
         pinnedAddresses = AppConfig.ETHA_ECH_ADDRESSES,
@@ -87,7 +89,12 @@ object EthaEchFetch {
         proxy = proxy?.address.orEmpty(),
         proxyUser = proxy?.user.orEmpty(),
         proxyPassword = proxy?.password.orEmpty(),
+        headers = headers,
     )
+
+    /** Pure: of (transport, address) pairs, the addresses of the lines that dial Cloudflare — never a relay's (since 2026-10-24 the first lines of a subscription). */
+    fun addressesOf(lines: List<Pair<String?, String?>>): List<String> =
+        lines.filter { it.first?.trim()?.lowercase() in CLOUDFLARE_TRANSPORTS }.mapNotNull { it.second?.trim()?.takeIf { s -> s.isNotEmpty() } }
 
     /** Pure: the stored lines' IPv4 addresses in the order given (the selected line's first), no repeats, at most [MAX_STORED_ADDRESSES]. */
     fun candidateAddresses(stored: List<String>): List<String> =
@@ -117,12 +124,12 @@ object EthaEchFetch {
         }
     }
 
-    /** The lines of this subscription dial clean Cloudflare addresses: those, the selected line's first. */
-    private fun storedAddresses(subscriptionId: String?): List<String> {
+    /** The Cloudflare lines of this subscription dial clean addresses: those, the selected line's first (the relay lines are left out). */
+    fun storedAddresses(subscriptionId: String?): List<String> {
         if (subscriptionId.isNullOrBlank()) return emptyList()
         val guids = MmkvManager.decodeServerList(subscriptionId)
         val selected = MmkvManager.getSelectServer()
         val ordered = if (selected != null && guids.remove(selected)) listOf(selected) + guids else guids
-        return ordered.mapNotNull { MmkvManager.decodeServerConfig(it)?.server }
+        return addressesOf(ordered.mapNotNull { MmkvManager.decodeServerConfig(it) }.map { it.network to it.server })
     }
 }

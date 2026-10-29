@@ -488,7 +488,7 @@
     <string name="etha_keep_line">همین سرور بماند</string>
     <string name="etha_link_invalid">این لینک EthaVPN نیست</string>
     <string name="etha_link_added">اشتراک اضافه شد</string>
-    <string name="etha_no_line">هیچ سروری پاسخ نداد. اینترنت را بررسی کنید و دوباره امتحان کنید.</string>
+    <string name="etha_no_line">هیچ خطی جواب نداد. اینترنت را بررسی کنید و دوباره امتحان کنید.</string>
     <string name="etha_switched">به %s تغییر کرد</string>
     <string name="etha_update_available">نسخه‌ی %s آماده است. برای بروزرسانی بزنید.</string>
     <string name="etha_update_required">این نسخه قدیمی است. برای ادامه‌ی اتصال بزنید و بروزرسانی کنید.</string>
@@ -526,7 +526,7 @@
     <string name="etha_show_fewer">کمتر ▴</string>
     <string name="etha_fastest">سریع‌ترین‌ها</string>
     <string name="etha_auto_now">اکنون %s</string>
-    <string name="etha_auto_hint">«خودکار» سریع‌ترین سرور را انتخاب می‌کند</string>
+    <string name="etha_auto_hint">سریع‌ترین خط خودکار انتخاب می‌شود</string>
     <string name="etha_updated">بروزرسانی %s</string>
     <string name="etha_updated_never">هنوز بروزرسانی نشده</string>
     <string name="etha_privacy_policy">حریم خصوصی</string>
@@ -546,4 +546,16 @@
     <string name="etha_data_label_of">از %s مصرف شده</string>
     <string name="etha_auto_picked">خودکار · %s</string>
 
+    <!-- 2.0.0: the Home without line names (Test latency, Refresh, the three states) -->
+    <string name="etha_test_latency">تست تأخیر</string>
+    <string name="etha_testing">در حال تست…</string>
+    <string name="etha_state_searching">در جستجوی خط…</string>
+    <string name="etha_no_line_answers">هیچ خطی جواب نمی‌دهد</string>
+    <string name="etha_searching_hint">«بروزرسانی» را بزنید. باز هم نشد؟ «پشتیبانی» را بزنید.</string>
+    <string name="etha_switched_faster">به خط سریع‌تری رفت</string>
+    <string name="etha_on_fastest">روی سریع‌ترین خط هستید</string>
+    <string name="etha_ready">آماده · سریع‌ترین خط برای اتصال بعدی انتخاب شد</string>
+    <string name="etha_ready_ms">آماده · %d میلی‌ثانیه</string>
+    <string name="etha_just_now">همین حالا</string>
+    <string name="etha_refreshed">کانفیگ‌ها بروز شد</string>
 </resources>

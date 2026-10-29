@@ -11,6 +11,7 @@ import android.text.format.DateUtils
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.TextView
 import androidx.core.content.ContextCompat
 import android.net.VpnService
 import android.os.Build
@@ -26,16 +27,17 @@ import androidx.lifecycle.lifecycleScope
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreServiceManager
+import com.v2ray.ang.core.EthaAuto
 import com.v2ray.ang.databinding.ActivityHomeBinding
 import com.v2ray.ang.dto.CheckUpdateResult
 import com.v2ray.ang.dto.entities.SubscriptionCache
 import com.v2ray.ang.dto.entities.SubscriptionItem
 import com.v2ray.ang.enums.PermissionType
-import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.AutoSelect
+import com.v2ray.ang.handler.EthaReport
 import com.v2ray.ang.handler.EthaSubscription
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.util.MessageUtil
@@ -55,30 +57,36 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 
 /**
- * The one screen a customer needs: the subscription (from the link, the clipboard or a QR
- * code), one Connect button that picks the best line by itself, and the account card built
- * from the subscription headers. Everything v2rayNG exposes stays reachable under Advanced.
+ * The one screen a customer needs: the subscription (from the link, the clipboard or a QR code), one Connect button
+ * that picks the best line by itself, the latency of the line in use, "Test latency" and "Refresh", and the account
+ * card built from the subscription headers. No line is named anywhere (2.0.0): the names and every test go to the
+ * box instead (EthaReport → the panel). Everything v2rayNG exposes stays reachable under Advanced (expert mode).
+ *
+ * Three states while the tunnel is up: Connected (the chip shows the line in use's time), Searching for a line (Auto
+ * found no line answering — the disc amber, the chip red, the line under the buttons says what to do; Auto keeps
+ * measuring and fetching by itself, EthaAuto), and Testing (Test latency is running). The core answers with
+ * broadcasts; the service decides every move.
  */
 class HomeActivity : HelperBaseActivity() {
     companion object {
         const val EXTRA_LINK = "etha_link"
-        const val EXTRA_TEST = "etha_test"          // Settings asked for a "test again"
         private const val CONNECT_GUARD_MS = 25_000L
-        private val PROBE_OK = Regex("\\d+\\s*(ms|мс)")   // the probe's answer with a time (en, fa, ru); any other answer is a failure
     }
 
     private val binding by lazy { ActivityHomeBinding.inflate(layoutInflater) }
     private val mainViewModel: MainViewModel by viewModels()
     private var sub: SubscriptionCache? = null
     private var connecting = false        // waiting for the core to report started / stopped
-    private var refreshingQuietly = false // a background subscription refresh is running
+    private var refreshing = false        // a subscription fetch is running (quiet, or asked for with Refresh)
     private var clipboardTried: String? = null   // the link last taken from the clipboard (no second import of the same one)
-    private var pingAsked = false         // the customer pressed Ping all (or chose Auto again): the outcome is said when the round ends
+    private var testing = false           // Test latency is running: the button is busy, the chip says so
+    private var searching = false         // Auto found no line answering (the service's state)
+    private var latencyMs = 0L            // the line in use's last time: ms, -1 failed, 0 none yet
+    private var latencyAt = 0L
+    private var outcome = 0               // the string under the buttons after a test, 0 = none
     private var updateResult: CheckUpdateResult? = null
-    private var serverSheet: ServerSheet? = null   // the open server sheet, re-rendered as pings land
     private var pulse: AnimatorSet? = null         // the halo's slow breath while connected
-    private var lastProbe: String? = null          // the current server's last probe, for the chip
-    private var rateOnProbe = false                // the customer just connected by hand: this probe decides whether it counts for the rating ask
+    private var rateOnLatency = false              // the customer just connected by hand: the first time that lands decides the rating ask
 
     private val requestVpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (it.resultCode == RESULT_OK) {
@@ -95,22 +103,21 @@ class HomeActivity : HelperBaseActivity() {
         SettingsChangeManager.consumeSetupGroupTab()
         refreshSubscription()
         render()
-        if (it.data?.getBooleanExtra(EthaSettingsActivity.EXTRA_SERVER_CHANGED, false) == true) onServerChoiceChanged()
-        if (it.data?.getBooleanExtra(EXTRA_TEST, false) == true) testAgain()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentViewWithToolbar(binding.root, showHomeAsUp = false, title = getString(R.string.app_name))
+        // A line pinned by hand in 1.3.x would have no screen to unpin it now: nobody is pinned in 2.0.0.
+        MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, false)
 
         binding.btnConnect.setOnClickListener { onConnectClick() }
         binding.btnPaste.setOnClickListener { pasteLink() }
         binding.btnScan.setOnClickListener { scanLink() }
         binding.btnRefresh.setOnClickListener { refreshServers() }
+        binding.btnTest.setOnClickListener { testLatency() }
         binding.btnRenew.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_RENEW_URL) }
         binding.btnSupport.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_SUPPORT_URL) }
-        binding.btnTest.setOnClickListener { testAgain() }
-        binding.panelServer.setOnClickListener { showServerSheet() }
         // The hero has the height the phone leaves over (activity_home.xml): the disc with its halo grows with it, up
         // to 12 % at 160 dp to spare (168 dp, the design's tall-phone hero) — drawn larger, laid out the same, so
         // nothing else moves; the halo's clear rim is what reaches past its box.
@@ -123,54 +130,37 @@ class HomeActivity : HelperBaseActivity() {
         binding.tvUpdate.setOnClickListener { Updates.open(this) }
 
         mainViewModel.isRunning.observe(this) { running ->
-            rateOnProbe = running && connecting   // the customer's own Connect, not the state found on opening
+            rateOnLatency = running && connecting   // the customer's own Connect, not the state found on opening
             connecting = false
-            render()
-            if (running) mainViewModel.testCurrentServerRealPing()
-        }
-        mainViewModel.updateTestResultAction.observe(this) { lastProbe = it; renderChip(); countForRating(it) }
-        // every ping lands in the panel and the open sheet as it is measured (the results are cleared when a test starts)
-        mainViewModel.updateListAction.observe(this) { renderServerPanel(); serverSheet?.render() }
-        mainViewModel.testsFinished.observe(this) {
-            AutoSelect.markTested()
-            // Connected, the service decides and says what it did (lineSwitched, roundDone). Disconnected and in Auto,
-            // the selection moves to the best so the next Connect starts on it; a test never moves a live connection by
-            // itself — Auto's own moves come from the service's rules (EthaAuto).
-            val s = sub
-            if (s != null && mainViewModel.isRunning.value != true) {
-                val best = if (isPinned()) null else AutoSelect.pickBest(s.guid)
-                if (best != null) MmkvManager.setSelectServer(best)
-                if (pingAsked) {
-                    pingAsked = false
-                    val name = (best ?: MmkvManager.getSelectServer())?.let { MmkvManager.decodeServerConfig(it)?.remarks }?.let { ServerPicker.displayName(it) }
-                    when {
-                        name == null -> toastError(R.string.etha_no_line)
-                        isPinned() -> toast(getString(R.string.etha_ping_kept, name))
-                        else -> toastSuccess(getString(R.string.etha_ping_best, name))
-                    }
-                }
+            if (!running) {
+                searching = false; testing = false; latencyMs = 0L; outcome = 0
             }
             render()
-            serverSheet?.render()
         }
-        mainViewModel.lineSwitched.observe(this) { guid ->
-            lastProbe = null   // the chip's number was the previous line's
-            MmkvManager.decodeServerConfig(guid)?.remarks?.let { toast(getString(R.string.etha_switched, ServerPicker.displayName(it))) }
+        mainViewModel.lineLatency.observe(this) { ms ->
+            latencyMs = ms
+            latencyAt = System.currentTimeMillis()
+            renderChip()
+            if (rateOnLatency && ms > 0) {
+                rateOnLatency = false
+                askForRating()
+            }
+        }
+        mainViewModel.autoState.observe(this) { state ->
+            searching = state == "searching"
+            if (searching) outcome = 0
             render()
-            serverSheet?.render()
-            mainViewModel.testCurrentServerRealPing()
         }
-        mainViewModel.roundDone.observe(this) { outcome ->
-            pingAsked = false
-            val name = outcome.substringAfter(':', "").let { MmkvManager.decodeServerConfig(it)?.remarks }?.let { ServerPicker.displayName(it) }
-            when {
-                name == null -> toastError(R.string.etha_no_line)
-                outcome.startsWith("switched") -> toastSuccess(getString(R.string.etha_switched, name))
-                isPinned() -> toast(getString(R.string.etha_ping_kept, name))
-                else -> toastSuccess(getString(R.string.etha_ping_best, name))
+        mainViewModel.lineSwitched.observe(this) { render() }
+        mainViewModel.roundDone.observe(this) { result ->
+            testing = false
+            outcome = when (result) {
+                "switched" -> R.string.etha_switched_faster
+                "kept" -> R.string.etha_on_fastest
+                else -> R.string.etha_no_line_answers
             }
             render()
-            serverSheet?.render()
+            refreshQuietly()   // the report of that test reaches the box now, not with the next scheduled fetch
         }
         mainViewModel.startListenBroadcast()
         mainViewModel.initAssets(assets)
@@ -198,7 +188,6 @@ class HomeActivity : HelperBaseActivity() {
 
     override fun onDestroy() {
         pulse?.cancel()
-        serverSheet?.dismiss()
         super.onDestroy()
     }
 
@@ -239,21 +228,19 @@ class HomeActivity : HelperBaseActivity() {
         mainViewModel.subscriptionIdChanged(sub?.guid ?: "")
     }
 
-    private fun isPinned() = MmkvManager.decodeSettingsBool(AppConfig.PREF_ETHA_PINNED, false)
-
     private fun render() {
         val s = sub
         val servers = s?.let { MmkvManager.decodeServerList(it.guid) } ?: emptyList()
         val empty = s == null || servers.isEmpty()
         binding.cardEmpty.isVisible = empty
         binding.hero.isVisible = !empty
-        binding.panelServer.isVisible = !empty
         binding.cardAccount.isVisible = !empty
 
         val running = mainViewModel.isRunning.value == true
         binding.tvState.text = getString(
             when {
                 connecting -> R.string.etha_state_connecting
+                running && searching -> R.string.etha_state_searching
                 running -> R.string.etha_state_connected
                 else -> R.string.etha_state_not_connected
             }
@@ -262,17 +249,28 @@ class HomeActivity : HelperBaseActivity() {
         // never moves): the hint ("Tap to connect" + what Auto does), connected the chip, busy the spinner alone.
         val busy = connecting
         binding.tvConnectHint.visibility = if (!running && !busy) View.VISIBLE else View.INVISIBLE
-        binding.tvConnectHint.text = if (isPinned()) getString(R.string.etha_tap_to_connect)
-            else getString(R.string.etha_tap_to_connect) + "\n" + getString(R.string.etha_auto_hint)
+        binding.tvConnectHint.text = getString(R.string.etha_tap_to_connect) + "\n" + getString(R.string.etha_auto_hint)
         binding.btnConnect.isEnabled = !connecting
-        binding.btnConnect.backgroundTintList = ColorStateList.valueOf(
-            ContextCompat.getColor(this, if (running) R.color.etha_green else R.color.etha_blue)
+        val disc = when {
+            running && searching -> R.color.etha_amber
+            running -> R.color.etha_green
+            else -> R.color.etha_blue
+        }
+        binding.btnConnect.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, disc))
+        binding.halo.setBackgroundResource(
+            when {
+                running && searching -> R.drawable.bg_halo_amber
+                running -> R.drawable.bg_halo_green
+                else -> R.drawable.bg_halo_blue
+            }
         )
-        binding.halo.setBackgroundResource(if (running) R.drawable.bg_halo_green else R.drawable.bg_halo_blue)
         pulseHalo(running)
         binding.progress.isVisible = busy
+        binding.btnTest.isEnabled = !empty && !testing && !connecting
+        binding.btnTest.text = getString(if (testing) R.string.etha_testing else R.string.etha_test_latency)
+        binding.btnRefresh.isEnabled = !empty && !refreshing && !connecting
         renderChip()
-        renderServerPanel()
+        renderOutcome()
         if (s != null) renderAccount(s.subscription)
     }
 
@@ -291,84 +289,92 @@ class HomeActivity : HelperBaseActivity() {
         }
     }
 
-    /** The chip under the state while connected: the server and its last probe. */
+    /** The chip under the state while connected: the line in use's time and its age — never its name. */
     private fun renderChip() {
-        val text = chipText()
-        binding.tvLine.isVisible = text.isNotEmpty() && !connecting
-        binding.tvLine.text = text
-    }
-
-    /** The server panel: Auto → the line it picked (or the pinned line) and its ping. */
-    private fun renderServerPanel() {
-        val name = ServerPicker.currentName()
-        val ms = ServerPicker.currentDelay()
-        binding.tvServerValue.text = when {
-            name == null -> getString(R.string.etha_server_auto)
-            isPinned() -> name
-            else -> getString(R.string.etha_auto_picked, name)
+        val chip = binding.tvLine
+        if (mainViewModel.isRunning.value != true || connecting) {
+            chip.isVisible = false
+            return
         }
-        binding.tvServerMs.text = if (ms > 0) "$ms ms" else ""
-        binding.tvServerMs.setTextColor(ServerPicker.dotColor(this, ms))
+        when {
+            testing -> styleChip(chip, red = false, text = getString(R.string.etha_testing))
+            searching -> styleChip(chip, red = true, text = getString(R.string.etha_no_line_answers) + " · " + ago(latencyAt))
+            latencyMs > 0 -> styleChip(chip, red = false, text = "$latencyMs ms · " + ago(latencyAt))
+            else -> { chip.isVisible = false; return }
+        }
+        chip.isVisible = true
     }
 
-    private fun showServerSheet() {
-        val s = sub ?: return
-        serverSheet = ServerPicker.show(
-            this, s.guid, isPinned(),
-            onPick = { guid ->
-                if (guid == null) {
-                    MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, false)
-                } else {
-                    MmkvManager.setSelectServer(guid)
-                    MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, true)
-                }
-                onServerChoiceChanged()
-            },
-            onTest = { testAgain() }
-        ).also { sheet -> sheet.setOnDismissListener { if (serverSheet === sheet) serverSheet = null } }
+    private fun styleChip(chip: TextView, red: Boolean, text: String) {
+        chip.text = text
+        chip.setBackgroundResource(if (red) R.drawable.bg_chip_red else R.drawable.bg_chip)
+        chip.setTextColor(ContextCompat.getColor(this, if (red) R.color.etha_red else R.color.etha_green_light))
+        chip.setCompoundDrawablesRelativeWithIntrinsicBounds(if (red) R.drawable.bg_dot_red else R.drawable.bg_dot, 0, 0, 0)
     }
 
-    // ---------------------------------------------------------------- the server choice
+    private fun ago(at: Long): String {
+        if (at <= 0L || System.currentTimeMillis() - at < 60_000L) return getString(R.string.etha_just_now)
+        return DateUtils.getRelativeTimeSpanString(at, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS, DateUtils.FORMAT_ABBREV_RELATIVE).toString()
+    }
+
+    /** Under the buttons: what the last test did, or what to do while no line answers; invisible otherwise (the block keeps its height). */
+    private fun renderOutcome() {
+        val running = mainViewModel.isRunning.value == true
+        val text = when {
+            running && searching -> getString(R.string.etha_searching_hint)
+            outcome != 0 -> getString(outcome)
+            else -> ""
+        }
+        binding.tvOutcome.text = text
+        binding.tvOutcome.visibility = if (text.isEmpty()) View.INVISIBLE else View.VISIBLE
+    }
 
     /**
-     * A new choice while connected: a picked line takes the new connections at once, Auto chosen again measures every
-     * line and decides — the service does both through the running core (EthaAuto); nothing reconnects.
+     * Test latency: connected, the service measures every line through the running core and says what it did
+     * (roundDone); disconnected, one throw-away core measures them and the best is the line the next Connect starts
+     * on. Either way the result is kept for the box (EthaReport) and a quiet fetch carries it there.
      */
-    private fun onServerChoiceChanged() {
-        render()
-        if (mainViewModel.isRunning.value != true) return
-        if (isPinned()) {
-            MmkvManager.getSelectServer()?.let { MessageUtil.sendMsg2Service(this, AppConfig.MSG_ETHA_SWITCH, it) }
-        } else {
-            pingAsked = true
-            MessageUtil.sendMsg2Service(this, AppConfig.MSG_ETHA_PING_ALL, "")
-        }
-    }
-
-    /** Ping all: connected, the service measures every line through the running core; disconnected, one throw-away core does. */
-    private fun testAgain() {
+    private fun testLatency() {
         val s = sub ?: return
         val lines = MmkvManager.decodeServerList(s.guid)
-        if (lines.isEmpty()) return
-        pingAsked = true
-        toast(R.string.etha_state_finding)
+        if (lines.isEmpty() || testing) return
+        testing = true
+        outcome = 0
+        render()
         if (mainViewModel.isRunning.value == true) {
-            MmkvManager.clearAllTestDelayResults(lines)
             MessageUtil.sendMsg2Service(this, AppConfig.MSG_ETHA_PING_ALL, "")
-        } else {
-            mainViewModel.testAllRealPing()
+            return
         }
-        render()   // the cleared results show at once; each ping fills in as it lands
-        serverSheet?.render()
-    }
-
-    /** "CleanIP3 · XHTTP/443 · 412 ms" while connected (the probe's number, else the last test's), else "". */
-    private fun chipText(): String {
-        if (mainViewModel.isRunning.value != true) return ""
-        val name = ServerPicker.currentName() ?: return ""
-        val probed = lastProbe?.let { Regex("(\\d+)\\s*ms").find(it)?.groupValues?.get(1)?.toLongOrNull() }
-        val ms = probed ?: ServerPicker.currentDelay()
-        return if (ms > 0) "$name · $ms ms" else name
+        lifecycleScope.launch(Dispatchers.IO) {
+            val results = try {
+                EthaAuto.measureOffline(this@HomeActivity, lines)
+            } catch (e: Exception) {
+                LogUtil.e(AppConfig.TAG, "Test latency failed", e)
+                null
+            }
+            withContext(Dispatchers.Main) {
+                testing = false
+                if (results == null) {
+                    toastError(R.string.toast_failure)
+                    render()
+                    return@withContext
+                }
+                for ((guid, ms) in results) MmkvManager.encodeServerTestDelayMillis(guid, ms)
+                AutoSelect.markTested()
+                val best = AutoSelect.pickBest(s.guid)
+                if (best != null) MmkvManager.setSelectServer(best)
+                val bestMs = best?.let { results[it] } ?: -1L
+                val report = EthaReport.build(
+                    System.currentTimeMillis(), "manual", best?.let { MmkvManager.decodeServerConfig(it)?.remarks }, false,
+                    lines.map { (MmkvManager.decodeServerConfig(it)?.remarks ?: "") to (results[it] ?: 0L) },
+                )
+                if (report != null) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, report)
+                outcome = if (bestMs > 0) R.string.etha_ready else R.string.etha_no_line_answers
+                if (bestMs > 0) toastSuccess(getString(R.string.etha_ready_ms, bestMs)) else toastError(R.string.etha_no_line)
+                render()
+                refreshQuietly()
+            }
+        }
     }
 
     private fun renderAccount(item: SubscriptionItem) {
@@ -414,17 +420,12 @@ class HomeActivity : HelperBaseActivity() {
             guardConnecting()
             return
         }
-        // The line to start on: the pinned one; else the best of results younger than ETHA_DELAY_FRESH_MS; else the
-        // line used last; else the first. Nothing is waited for: the service measures every line through the running
-        // core as soon as the tunnel is up and moves new connections to a better one by itself (EthaAuto).
+        // The line to start on: the best of results younger than ETHA_DELAY_FRESH_MS; else the line used last; else
+        // the first. Nothing is waited for: the service measures every line through the running core as soon as the
+        // tunnel is up and moves new connections to a better one by itself (EthaAuto).
         val lines = MmkvManager.decodeServerList(s.guid)
-        if (isPinned() && !EthaSubscription.selectedIsIn(s.guid)) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, false)
         val selected = MmkvManager.getSelectServer()?.takeIf { EthaSubscription.selectedIsIn(s.guid) }
-        val start = when {
-            isPinned() -> selected
-            AutoSelect.resultsFresh() -> AutoSelect.pickBest(s.guid) ?: selected
-            else -> selected
-        } ?: lines.firstOrNull()
+        val start = (if (AutoSelect.resultsFresh()) AutoSelect.pickBest(s.guid) ?: selected else selected) ?: lines.firstOrNull()
         if (start == null) {
             toastError(R.string.etha_no_line)
             return
@@ -564,9 +565,7 @@ class HomeActivity : HelperBaseActivity() {
             }
             withContext(Dispatchers.Main) {
                 hideLoading()
-                refreshSubscription()
-                render()
-                SubscriptionUpdater.sync(forceReschedule = true)   // the background refresh, timed from this fetch
+                afterFetch()
                 val servers = sub?.let { MmkvManager.decodeServerList(it.guid) }.orEmpty()
                 if (servers.isEmpty()) {
                     toastError(R.string.import_subscription_failure)
@@ -587,8 +586,14 @@ class HomeActivity : HelperBaseActivity() {
      */
     private fun refreshQuietlyIfStale() {
         val s = sub ?: return
-        if (refreshingQuietly || !EthaSubscription.isStale(s.subscription.lastUpdated)) return
-        refreshingQuietly = true
+        if (!EthaSubscription.isStale(s.subscription.lastUpdated)) return
+        refreshQuietly()
+    }
+
+    private fun refreshQuietly() {
+        if (sub == null || refreshing) return
+        refreshing = true
+        render()
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 AngConfigManager.updateConfigViaSubAll()
@@ -596,45 +601,48 @@ class HomeActivity : HelperBaseActivity() {
                 LogUtil.e(AppConfig.TAG, "Quiet refresh failed", e)
             }
             withContext(Dispatchers.Main) {
-                refreshingQuietly = false
-                refreshSubscription()
-                render()
-                SubscriptionUpdater.sync(forceReschedule = true)
+                refreshing = false
+                afterFetch()
             }
         }
     }
 
+    /** Refresh: the configs fetched now, with a spinner and a word at the end. */
     private fun refreshServers() {
-        binding.btnRefresh.isEnabled = false
+        if (refreshing) return
+        refreshing = true
+        render()
         showLoading()
         lifecycleScope.launch(Dispatchers.IO) {
             val result = mainViewModel.updateConfigViaSubAll()
             withContext(Dispatchers.Main) {
                 hideLoading()
-                binding.btnRefresh.isEnabled = true
-                refreshSubscription()
-                render()
-                SubscriptionUpdater.sync(forceReschedule = true)   // the background refresh, timed from this fetch
-                if (result.successCount > 0) {
-                    toastSuccess(getString(R.string.title_update_config_count, result.configCount))
-                } else {
-                    toastError(R.string.toast_failure)
-                }
+                refreshing = false
+                afterFetch()
+                if (result.successCount > 0) toastSuccess(R.string.etha_refreshed) else toastError(R.string.toast_failure)
             }
+        }
+    }
+
+    /** After any fetch: the screen, the background schedule, and a running core restarted when the lines changed. */
+    private fun afterFetch() {
+        refreshSubscription()
+        render()
+        SubscriptionUpdater.sync(forceReschedule = true)   // the background refresh, timed from this fetch
+        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_ETHA_LINES_CHANGED, false)) {
+            MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINES_CHANGED, false)
+            if (mainViewModel.isRunning.value == true) restartCore()   // the core holds the set it started with
         }
     }
 
     // ---------------------------------------------------------------- the rating ask
 
     /**
-     * A connection the customer made that works (its probe came back with a time) counts towards the
-     * rating ask; RatePrompt says when one is due — rarely, and never after a failure. The stars
-     * themselves are on the store's page: "Rate" opens it, "Not now" waits for the next round.
+     * A connection the customer made that works (its first measured time landed) counts towards the rating ask;
+     * RatePrompt says when one is due — rarely, and never after a failure. The stars themselves are on the store's
+     * page: "Rate" opens it, "Not now" waits for the next round.
      */
-    private fun countForRating(probe: String?) {
-        if (!rateOnProbe) return
-        rateOnProbe = false
-        if (probe == null || !PROBE_OK.containsMatchIn(probe)) return
+    private fun askForRating() {
         if (!RatePrompt.connected() || isFinishing || isDestroyed) return
         RatePrompt.asked()
         AlertDialog.Builder(this)
