@@ -241,6 +241,7 @@ class HomeActivity : HelperBaseActivity() {
             when {
                 connecting -> R.string.etha_state_connecting
                 running && searching -> R.string.etha_state_searching
+                running && latencyMs <= 0L -> R.string.etha_state_connecting   // up and passing traffic, the first measurement not in yet (the operator's wording, 2026-10-30)
                 running -> R.string.etha_state_connected
                 else -> R.string.etha_state_not_connected
             }
