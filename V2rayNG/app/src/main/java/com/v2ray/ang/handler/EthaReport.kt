@@ -36,7 +36,12 @@ object EthaReport {
         return "v=1;t=${nowMs / 1000};trig=$trigger;use=$use;sw=${if (switched) 1 else 0};l=${items.joinToString(",")}"
     }
 
-    /** One text for a set of lines (address, port, name): the same set → the same text, whatever the ids. */
-    fun fingerprint(lines: List<Triple<String?, String?, String?>>): String =
-        lines.map { (server, port, remarks) -> "${server.orEmpty()}:${port.orEmpty()}:${remarks.orEmpty()}" }.sorted().joinToString("|")
+    /** What identifies a line to the running core: its address, port, name and user id — not Cloudflare's ECH
+     *  configuration of the hour, which rides in the share link and would make every refresh look like new lines. */
+    data class LineKey(val server: String?, val port: String?, val remarks: String?, val userId: String?)
+
+    /** One text for a set of lines: the same set → the same text, whatever the ids; a new user id (the box's
+     *  "new user ID") is a change — the running core must take it. */
+    fun fingerprint(lines: List<LineKey>): String =
+        lines.map { "${it.server.orEmpty()}:${it.port.orEmpty()}:${it.remarks.orEmpty()}:${it.userId.orEmpty()}" }.sorted().joinToString("|")
 }

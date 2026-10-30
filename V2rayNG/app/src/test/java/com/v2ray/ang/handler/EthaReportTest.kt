@@ -40,10 +40,13 @@ class EthaReportTest {
     }
 
     @Test
-    fun theFingerprintIgnoresOrderAndIds() {
-        val a = EthaReport.fingerprint(listOf(Triple("1.1.1.1", "443", "x"), Triple("2.2.2.2", "443", "y")))
-        val b = EthaReport.fingerprint(listOf(Triple("2.2.2.2", "443", "y"), Triple("1.1.1.1", "443", "x")))
+    fun theFingerprintIgnoresOrderAndIdsButNotTheUserId() {
+        fun k(server: String, remarks: String, user: String = "u1") = EthaReport.LineKey(server, "443", remarks, user)
+        val a = EthaReport.fingerprint(listOf(k("1.1.1.1", "x"), k("2.2.2.2", "y")))
+        val b = EthaReport.fingerprint(listOf(k("2.2.2.2", "y"), k("1.1.1.1", "x")))
         assertEquals(a, b)
-        assertTrue(a != EthaReport.fingerprint(listOf(Triple("1.1.1.1", "443", "x"), Triple("3.3.3.3", "443", "y"))))
+        assertTrue(a != EthaReport.fingerprint(listOf(k("1.1.1.1", "x"), k("3.3.3.3", "y"))))
+        assertTrue(a != EthaReport.fingerprint(listOf(k("1.1.1.1", "x", "u2"), k("2.2.2.2", "y", "u2"))))   // a rotated user id must reach the running core
+        assertEquals(EthaReport.fingerprint(listOf(k("1.1.1.1", "x"))), EthaReport.fingerprint(listOf(k("1.1.1.1", "x"))))   // nothing of the ECH configuration is in the key
     }
 }

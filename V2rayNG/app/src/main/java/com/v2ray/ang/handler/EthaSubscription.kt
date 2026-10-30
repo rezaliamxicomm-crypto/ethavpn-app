@@ -215,7 +215,7 @@ object EthaSubscription {
 
     /** The fingerprint of a subscription's stored lines (EthaReport.fingerprint): the same set, whatever the ids. */
     fun linesFingerprint(subId: String): String =
-        EthaReport.fingerprint(MmkvManager.decodeServerList(subId).mapNotNull { MmkvManager.decodeServerConfig(it) }.map { Triple(it.server, it.serverPort, it.remarks) })
+        EthaReport.fingerprint(MmkvManager.decodeServerList(subId).mapNotNull { MmkvManager.decodeServerConfig(it) }.map { EthaReport.LineKey(it.server, it.serverPort, it.remarks, it.password) })
 
     /** Whether the selected server belongs to this subscription. */
     fun selectedIsIn(subId: String): Boolean {
