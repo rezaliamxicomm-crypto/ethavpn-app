@@ -75,8 +75,8 @@ jobs:
         cp -r ${{ github.workspace }}/libs ${{ github.workspace }}/V2rayNG/app
 
     # The core library is built here from the AndroidLibXrayLite submodule (the commit it pins, which was
-    # upstream's prebuilt libv2ray.aar before) with two files of ours added: echfetch/echfetch.go, the
-    # subscription fetch with Encrypted Client Hello (echfetch/README.md), and autoctl/libv2ray_auto.go, Auto's
+    # upstream's prebuilt libv2ray.aar before) with three files of ours added: echfetch/echfetch.go, the
+    # subscription fetch with Encrypted Client Hello (echfetch/README.md), echfetch/signature.go, the signed answer's check, and autoctl/libv2ray_auto.go, Auto's
     # core side (the balancer's target, the lines measured through the running core). Cached by the submodule
     # commit, those files' content and the NDK, so it is rebuilt only when one of them changes (about three minutes).
     - name: Setup Go (the core library's own version)
@@ -103,7 +103,7 @@ jobs:
       uses: actions/cache/restore@v6
       with:
         path: ${{ github.workspace }}/V2rayNG/app/libs/libv2ray.aar
-        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('echfetch/echfetch.go') }}-${{ hashFiles('autoctl/libv2ray_auto.go') }}
+        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('echfetch/echfetch.go', 'echfetch/signature.go') }}-${{ hashFiles('autoctl/libv2ray_auto.go') }}
 
     - name: Build libv2ray from the submodule with the ECH fetch
       if: steps.cache-libv2ray-restore.outputs.cache-hit != 'true'
@@ -111,7 +111,7 @@ jobs:
         ANDROID_NDK_HOME: ${{ env.NDK_HOME }}
       run: |
         set -euo pipefail
-        cp echfetch/echfetch.go autoctl/libv2ray_auto.go autoctl/libv2ray_auto_test.go AndroidLibXrayLite/
+        cp echfetch/echfetch.go echfetch/signature.go autoctl/libv2ray_auto.go autoctl/libv2ray_auto_test.go AndroidLibXrayLite/
         cd AndroidLibXrayLite
         go install golang.org/x/mobile/cmd/gomobile@latest
         export PATH="$PATH:$(go env GOPATH)/bin"
@@ -134,7 +134,7 @@ jobs:
       uses: actions/cache/save@v6
       with:
         path: ${{ github.workspace }}/V2rayNG/app/libs/libv2ray.aar
-        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('echfetch/echfetch.go') }}-${{ hashFiles('autoctl/libv2ray_auto.go') }}
+        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('echfetch/echfetch.go', 'echfetch/signature.go') }}-${{ hashFiles('autoctl/libv2ray_auto.go') }}
 
     - name: Setup Java
       uses: actions/setup-java@v5
