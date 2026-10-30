@@ -15,6 +15,7 @@ data class EchFetchRequest(
     val proxyPassword: String = "",
     val headers: Map<String, String> = emptyMap(),   // extra request headers, every way (X-Etha-Lines)
     val plain: Boolean = false,                       // no ECH: a plain TLS fetch to `addresses`, the url's host as the certificate's name (the link hop inside Iran)
+    val signKeys: List<String> = emptyList(),         // the box's public keys (AppConfig.ETHA_SIGN_KEYS): the core checks the answer's signature against them (2.1)
 )
 
 /** What it returns: the answer, or why there is none. echAccepted is true on every ECH answer (a request is never sent without it); false on a plain one, whose keySource is "plain". */
@@ -25,5 +26,7 @@ data class EchFetchResult(
     val echAccepted: Boolean = false,
     val address: String? = null,
     val keySource: String? = null,                    // "dns:<resolver>", "pinned" or "retry"; "plain" when no ECH was asked
+    val signed: String? = null,                       // the answer's signature against the pinned keys: ok | none | bad | unknown-key | nokeys (2.1)
+    val signedAt: Long = 0L,                          // when the box signed it, unix seconds; 0 unsigned
     val error: String? = null,
 )

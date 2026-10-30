@@ -577,6 +577,7 @@
     <string name="etha_no_answer_yet">No answer yet</string>
     <string name="etha_no_line_answers">No line answers</string>
     <string name="etha_searching_hint">Tap Refresh. Still nothing? Tap Support.</string>
+    <string name="etha_lines_blocked">Lines are blocked on this network right now. We are working on it.</string>
     <string name="etha_switched_faster">Switched to a faster line</string>
     <string name="etha_on_fastest">On the fastest line</string>
     <string name="etha_ready">Ready · the fastest line is set for the next connect</string>

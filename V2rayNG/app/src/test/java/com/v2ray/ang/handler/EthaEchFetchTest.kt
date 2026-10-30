@@ -3,6 +3,7 @@ package com.v2ray.ang.handler
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.dto.EchFetchResult
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -91,7 +92,7 @@ class EthaEchFetchTest {
     @Test
     fun aGoodAnswerBecomesTheResponse() {
         val result = EchFetchResult(
-            status = 200, body = "dmxlc3M6Ly8=", echAccepted = true, address = "104.21.67.176", keySource = "dns:1.1.1.1",
+            status = 200, body = "dmxlc3M6Ly8=", echAccepted = true, address = "104.21.67.176", keySource = "dns:1.1.1.1", signed = "ok", signedAt = 1_800_000_000L,
             headers = mapOf("profile-update-interval" to "3", "subscription-userinfo" to "upload=0; download=5; total=0; expire=0"),
         )
         val response = EthaEchFetch.toResponse(result)
@@ -106,20 +107,37 @@ class EthaEchFetchTest {
         assertNull(EthaEchFetch.toResponse(null))
         assertNull(EthaEchFetch.toResponse(EchFetchResult(error = "ech: no key")))
         assertNull(EthaEchFetch.toResponse(EchFetchResult(status = 200, body = "x", echAccepted = false)))
-        assertNull(EthaEchFetch.toResponse(EchFetchResult(status = 403, body = "{\"detail\":\"expired\"}", echAccepted = true)))
-        assertNull(EthaEchFetch.toResponse(EchFetchResult(status = 200, body = "", echAccepted = true)))
+        assertNull(EthaEchFetch.toResponse(EchFetchResult(status = 403, body = "{\"detail\":\"expired\"}", echAccepted = true, signed = "ok")))
+        assertNull(EthaEchFetch.toResponse(EchFetchResult(status = 200, body = "", echAccepted = true, signed = "ok")))
         assertEquals("no result from the core", EthaEchFetch.describe(null))
         assertEquals("ech: no key", EthaEchFetch.describe(EchFetchResult(error = "ech: no key")))
         assertEquals("ECH not accepted", EthaEchFetch.describe(EchFetchResult(status = 200, body = "x")))
-        assertEquals("status 403", EthaEchFetch.describe(EchFetchResult(status = 403, body = "x", echAccepted = true)))
-        assertEquals("status 200, empty body", EthaEchFetch.describe(EchFetchResult(status = 200, echAccepted = true)))
+        assertEquals("status 403", EthaEchFetch.describe(EchFetchResult(status = 403, body = "x", echAccepted = true, signed = "ok")))
+        assertEquals("status 200, empty body", EthaEchFetch.describe(EchFetchResult(status = 200, echAccepted = true, signed = "ok")))
+    }
+
+    @Test
+    fun aSubscriptionOrAnExpiryCountsOnlyWithTheBoxsSignature() {
+        assertTrue(AppConfig.ETHA_SIGN_KEYS.size == 2)                                                     // A in use, B the spare
+        val signed = EchFetchResult(status = 200, body = "dmxlc3M6Ly8=", echAccepted = true, signed = "ok", signedAt = 1_800_000_000L)
+        assertTrue(EthaEchFetch.trusted(signed)); assertTrue(EthaEchFetch.answered(signed)); assertNotNull(EthaEchFetch.toResponse(signed))
+        for (verdict in listOf(null, "", "none", "bad", "unknown-key", "nokeys")) {
+            val r = EchFetchResult(status = 200, body = "dmxlc3M6Ly8=", echAccepted = true, signed = verdict)
+            assertFalse("signed=$verdict", EthaEchFetch.trusted(r)); assertFalse(EthaEchFetch.answered(r)); assertNull(EthaEchFetch.toResponse(r))
+            assertEquals("status 200, signature ${verdict ?: "unchecked"}", EthaEchFetch.describe(r))
+        }
+        assertFalse(EthaEchFetch.answered(EchFetchResult(status = 403, body = "x", echAccepted = true, signed = "bad")))   // a forged expiry is no answer
+        assertTrue(EthaEchFetch.answered(EchFetchResult(status = 404, echAccepted = true)))                               // other statuses carry no signature
+        assertTrue(EthaEchFetch.answered(EchFetchResult(status = 500, echAccepted = true, signed = "none")))
+        assertFalse(EthaEchFetch.stale(signed, nowSec = 1_800_000_000L + 3600)); assertTrue(EthaEchFetch.stale(signed, nowSec = 1_800_000_000L + 3601))
+        assertFalse(EthaEchFetch.stale(EchFetchResult(status = 404), nowSec = 2_000_000_000L))
     }
 
     @Test
     fun onlyAFetchThatReachedNobodyGoesTheSecondWay() {
         // the server answered — expired, unknown, or the subscription itself: the way through the tunnel would hear the same
-        assertTrue(EthaEchFetch.answered(EchFetchResult(status = 200, body = "dmxlc3M6Ly8=", echAccepted = true)))
-        assertTrue(EthaEchFetch.answered(EchFetchResult(status = 403, body = "{\"detail\":\"expired\"}", echAccepted = true)))
+        assertTrue(EthaEchFetch.answered(EchFetchResult(status = 200, body = "dmxlc3M6Ly8=", echAccepted = true, signed = "ok")))
+        assertTrue(EthaEchFetch.answered(EchFetchResult(status = 403, body = "{\"detail\":\"expired\"}", echAccepted = true, signed = "ok")))
         assertTrue(EthaEchFetch.answered(EchFetchResult(status = 404, echAccepted = true)))
         // nobody answered: no result, an error, no ECH
         assertTrue(!EthaEchFetch.answered(null))

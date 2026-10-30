@@ -47,14 +47,15 @@ object EthaHopFetch {
         timeoutMs = TIMEOUT_MS,
         headers = headers,
         plain = true,
+        signKeys = AppConfig.ETHA_SIGN_KEYS,
     )
 
-    /** Pure: the hop itself answered — any status. Only a hop that reached nobody is worth the next one. */
-    fun answered(result: EchFetchResult?): Boolean = result != null && result.error.isNullOrEmpty() && result.status > 0
+    /** Pure: the hop itself answered — any status — and, for a subscription or an expiry, with the box's signature (EthaEchFetch.trusted). */
+    fun answered(result: EchFetchResult?): Boolean = result != null && result.error.isNullOrEmpty() && result.status > 0 && EthaEchFetch.trusted(result)
 
     /** Pure: a 2xx answer → its body and headers; anything else → null. */
     fun toResponse(result: EchFetchResult?): UrlContentResponse? {
-        if (result == null || !result.error.isNullOrEmpty()) return null
+        if (result == null || !result.error.isNullOrEmpty() || !EthaEchFetch.trusted(result)) return null
         val body = result.body.orEmpty()
         if (result.status !in 200..299 || body.isEmpty()) return null
         return UrlContentResponse(body, result.headers.orEmpty())
@@ -75,7 +76,7 @@ object EthaHopFetch {
         if (token.isEmpty()) return EthaEchFetch.Outcome(null, false)
         for (hop in hops()) {
             val result = EthaEchFetch.call(buildRequest(token, hop, userAgent, headers), "through the hop ${hop.host}")
-            if (answered(result)) return EthaEchFetch.Outcome(toResponse(result), true)
+            if (answered(result)) return EthaEchFetch.Outcome(toResponse(result), true, result?.signedAt ?: 0L)
         }
         return EthaEchFetch.Outcome(null, false)
     }

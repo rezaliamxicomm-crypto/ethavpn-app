@@ -8,109 +8,111 @@ import org.junit.Test
 
 class AutoScheduleTest {
     private val p = AutoPolicy()
-    private val t0 = 1_800_000_000_000L
-    private fun at(s: Long) = t0 + s * 1000L
+    private val lines = listOf("r1", "r2", "x1", "x2", "w1", "w2")
+    private val all: (String) -> Boolean = { true }
+    private fun s(sec: Double) = (sec * 1000).toLong()
 
     @Test
-    fun theNextRoundComesOneIntervalAfterTheLastEndedWhateverTheMeasurementTook() {
-        val s = AutoSchedule()
-        assertNull(s.action(at(1000), inUse = true, searching = false))                 // nothing before the first race ended
-        s.roundDone(t0, mapOf("a" to 200L, "b" to 250L, "c" to 300L), p, 0.5, searching = false)   // 180 s
-        assertNull(s.action(at(179), inUse = true, searching = false))
-        assertEquals(AutoSchedule.Action.ROUND, s.action(at(180), inUse = true, searching = false))
-        // the bug of 2.0.0–2.0.2: at that moment every line is measured, not skipped for having been probed "too recently"
-        assertEquals(listOf("a", "b", "c"), s.linesForRound(at(180), listOf("a", "b", "c"), searching = false))
-        assertNull(s.action(at(180), inUse = false, searching = false))                 // idle: no round
+    fun connectProbesTheLineInUseFirstThenTheQuickPassTwoAtATime() {
+        val sch = AutoSchedule()
+        assertNull(sch.action(0, warm = true, watched = true, searching = false, current = "r1", due = all))   // not started
+        sch.start(s(10.0), lines)
+        assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(10.0), warm = false, watched = false, searching = false, current = "r1", due = all))   // first pass: warm or not, watched or not
+        sch.currentProbed(s(10.0), p)
+        assertEquals(AutoSchedule.Action.Probe(listOf("r2", "x1")), sch.action(s(10.0), warm = false, watched = false, searching = false, current = "r1", due = all))   // two at a time, the line in use skipped
+        assertFalse(sch.probed(s(10.0), 2, p, 0.5))
+        assertNull(sch.action(s(10.5), warm = false, watched = false, searching = false, current = "r1", due = all))
+        assertEquals(AutoSchedule.Action.Probe(listOf("x2", "w1")), sch.action(s(11.0), warm = false, watched = false, searching = false, current = "r1", due = all))   // a second a step
+        assertFalse(sch.probed(s(11.0), 2, p, 0.5))
+        assertEquals(AutoSchedule.Action.Probe(listOf("w2")), sch.action(s(12.0), warm = false, watched = false, searching = false, current = "r1", due = all))   // the pass ends with w2
+        assertTrue(sch.probed(s(12.0), 1, p, 0.5))                                                                        // a pass: the first pass is over
+        assertEquals(AutoSchedule.Phase.STEADY, sch.phase); assertEquals(1, sch.passes); assertFalse(sch.forced)
+        assertNull(sch.action(s(13.0), warm = false, watched = false, searching = false, current = "r1", due = all))        // cold and unwatched: nothing
+        assertEquals(30_000L, sch.paceMs(p, 0.5))                                                                           // 180 s over 6 lines
+        assertNull(sch.action(s(41.0), warm = true, watched = false, searching = false, current = "r1", due = all))
+        assertEquals(AutoSchedule.Action.Probe(listOf("r2")), sch.action(s(42.0), warm = true, watched = false, searching = false, current = "r1", due = all))   // one at a time from here
     }
 
     @Test
-    fun aFailedLineWaitsItsRetryAndIsRetriedOncePerWindow() {
-        val s = AutoSchedule()
-        s.roundDone(t0, mapOf("a" to -1L, "b" to 200L), p, 0.5, searching = false)
-        assertEquals(listOf("b"), s.linesForRound(at(180), listOf("a", "b"), searching = false))
-        assertEquals(listOf("b"), s.linesForRound(at(899), listOf("a", "b"), searching = false))
-        assertEquals(listOf("a", "b"), s.linesForRound(at(900), listOf("a", "b"), searching = false))
-        s.roundDone(at(900), mapOf("a" to -1L, "b" to 210L), p, 0.5, searching = false)   // still dead: another 900 s
-        assertEquals(listOf("b"), s.linesForRound(at(1080), listOf("a", "b"), searching = false))
-        assertEquals(listOf("a", "b"), s.linesForRound(at(1800), listOf("a", "b"), searching = false))
-        s.roundDone(at(1800), mapOf("a" to 190L), p, 0.5, searching = false)              // back: free again
-        assertEquals(listOf("a", "b"), s.linesForRound(at(1980), listOf("a", "b"), searching = false))
-        assertEquals(listOf("a", "b"), s.linesForRound(at(1), listOf("a", "b"), searching = true))   // Searching measures every line
+    fun aSteadyStepNeedsAWarmRadioOrTheScreenAndTheFirstPassNeedsNeither() {
+        val sch = AutoSchedule(); sch.reseed(0, lines, p, 0.5)
+        assertNull(sch.action(s(60.0), warm = false, watched = false, searching = false, current = "r1", due = all))          // cold and unwatched: the phone sleeps
+        assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(60.0), warm = false, watched = true, searching = false, current = "r1", due = all))   // on screen: the line in use first
+        sch.currentProbed(s(60.0), p)
+        assertEquals(AutoSchedule.Action.Probe(listOf("r2")), sch.action(s(60.0), warm = false, watched = true, searching = false, current = "r1", due = all))   // …then the step
+        assertEquals(AutoSchedule.Action.Probe(listOf("r2")), sch.action(s(60.0), warm = true, watched = false, searching = false, current = "r1", due = all))   // traffic flowing: the step, no current
+        val f = AutoSchedule(); f.start(0, lines)
+        assertEquals(AutoSchedule.Action.ProbeCurrent, f.action(0, warm = false, watched = false, searching = false, current = "r1", due = all))   // the first pass asks nobody
     }
 
     @Test
-    fun theSettlingRoundComesOnceAfterTheConnectRaceAndNotAfterAManualTest() {
-        val s = AutoSchedule()
-        s.raceDone(t0, mapOf("a" to 393L, "b" to 400L), p, 0.5, searching = false, settle = true)
-        assertNull(s.action(at(9), inUse = false, searching = false))
-        assertEquals(AutoSchedule.Action.SETTLE, s.action(at(10), inUse = false, searching = false))   // in use or not
-        s.settleTaken()
-        s.roundDone(at(12), mapOf("a" to 203L, "b" to 390L), p, 0.5, searching = false)
-        assertNull(s.action(at(13), inUse = true, searching = false))
-        assertEquals(AutoSchedule.Action.ROUND, s.action(at(192), inUse = true, searching = false))    // 180 s after the settle ended
-        val m = AutoSchedule()
-        m.raceDone(t0, mapOf("a" to 200L), p, 0.5, searching = false, settle = false)
-        assertNull(m.action(at(10), inUse = true, searching = false))
-        val off = AutoSchedule()
-        off.raceDone(t0, mapOf("a" to 200L), AutoPolicy.parse("settle=0"), 0.5, searching = false, settle = true)
-        assertNull(off.action(at(10), inUse = true, searching = false))
+    fun theLineInUseIsProbedEveryThirtySecondsOnlyWhileWatched() {
+        val sch = AutoSchedule(); sch.reseed(0, lines, p, 0.5)
+        assertNull(sch.action(s(29.0), warm = true, watched = true, searching = false, current = "r1", due = all))
+        assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(30.0), warm = true, watched = true, searching = false, current = "r1", due = all))
+        assertEquals(AutoSchedule.Action.Probe(listOf("r2")), sch.action(s(30.0), warm = true, watched = false, searching = false, current = "r1", due = all))   // not watched: the trickle only
+        sch.currentProbed(s(30.0), p)
+        assertEquals(AutoSchedule.Action.Probe(listOf("r2")), sch.action(s(30.0), warm = true, watched = true, searching = false, current = "r1", due = all))    // both due: the current came first, the step follows
     }
 
     @Test
-    fun searchingRunsEverySearchSecInUseOrNot() {
-        val s = AutoSchedule()
-        s.roundDone(t0, mapOf("a" to -1L), p, 0.5, searching = true)
-        assertNull(s.action(at(59), inUse = false, searching = true))
-        assertEquals(AutoSchedule.Action.ROUND, s.action(at(60), inUse = false, searching = true))
+    fun theJitterKeepsEachStepWithinTenPercentOfThePace() {
+        val sch = AutoSchedule(); sch.reseed(0, lines, p, 0.5)
+        assertEquals(27_000L, sch.paceMs(p, 0.0))
+        assertEquals(33_000L, sch.paceMs(p, 1.0))
+        assertEquals(180_000L, AutoSchedule().paceMs(p, 0.5))                                                              // no lines yet: the whole interval
     }
 
     @Test
-    fun theJitterKeepsTheRoundWithinTenPercent() {
-        val lo = AutoSchedule(); val hi = AutoSchedule()
-        lo.roundDone(t0, emptyMap(), p, 0.0, searching = false)
-        hi.roundDone(t0, emptyMap(), p, 1.0, searching = false)
-        assertEquals(AutoSchedule.Action.ROUND, lo.action(at(162), inUse = true, searching = false))
-        assertNull(lo.action(at(161), inUse = true, searching = false))
-        assertEquals(AutoSchedule.Action.ROUND, hi.action(at(198), inUse = true, searching = false))
-        assertNull(hi.action(at(197), inUse = true, searching = false))
+    fun linesWaitingTheirRetryAreSkippedAndASpentStepMovesOn() {
+        val sch = AutoSchedule(); sch.reseed(0, listOf("a", "b", "c"), p, 0.5)
+        val due: (String) -> Boolean = { it != "b" }
+        assertEquals(listOf("c"), sch.next(1, "a", due))
+        assertEquals(listOf("a", "c"), sch.next(2, null, due))
+        assertEquals(emptyList<String>(), sch.next(1, "a") { it == "a" })
+        sch.nothingDue(s(60.0), p, 0.5)
+        assertEquals(120_000L, sch.nextProbeAt)
     }
 
     @Test
-    fun theFallbackLastsOneRoundAndComesBackWhenTheTargetAnswers() {
-        assertFalse(AutoSchedule.nextFallback(current = false, fullSet = true, targetAnswered = true, fallbackAnswered = true))
-        assertFalse(AutoSchedule.nextFallback(current = false, fullSet = false, targetAnswered = false, fallbackAnswered = true))
-        assertFalse(AutoSchedule.nextFallback(current = false, fullSet = true, targetAnswered = false, fallbackAnswered = false))   // a blip: stay
-        assertTrue(AutoSchedule.nextFallback(current = false, fullSet = true, targetAnswered = false, fallbackAnswered = true))
-        assertFalse(AutoSchedule.nextFallback(current = true, fullSet = true, targetAnswered = true, fallbackAnswered = false))     // the scout answers: back
-        assertTrue(AutoSchedule.nextFallback(current = true, fullSet = true, targetAnswered = false, fallbackAnswered = true))
+    fun idleStopsTheTrickleAndTrafficReturningResumesItWithTheLineInUse() {
+        val sch = AutoSchedule(); sch.reseed(0, lines, p, 0.5)
+        assertNull(sch.action(s(600.0), warm = false, watched = false, searching = false, current = "r1", due = all))
+        sch.wake(s(600.0))
+        assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(600.0), warm = true, watched = false, searching = false, current = "r1", due = all))   // forced: even unwatched
+        val fresh = AutoSchedule(); fresh.wake(s(5.0))
+        assertNull(fresh.action(s(5.0), warm = true, watched = true, searching = false, current = "r1", due = all))        // before Connect: nothing to wake
     }
 
     @Test
-    fun aNetworkChangeIsOneRoundFifteenSecondsLaterInUseOrNotAndDebounced() {
-        val s = AutoSchedule()
-        s.roundDone(t0, mapOf("a" to -1L, "b" to 200L), p, 0.5, searching = false)
-        s.networkChanged(at(30))
-        assertNull(s.action(at(44), inUse = false, searching = false))
-        assertEquals(AutoSchedule.Action.ROUND, s.action(at(45), inUse = false, searching = false))      // idle or not
-        assertEquals(listOf("a", "b"), s.linesForRound(at(45), listOf("a", "b"), searching = false))      // failures void
-        s.networkChanged(at(50))                                                                          // within a minute: ignored
-        assertEquals(at(45), s.nextRoundAt)
-        s.roundDone(at(46), mapOf("a" to 210L, "b" to 200L), p, 0.5, searching = false)
-        assertFalse(s.forced)
-        assertNull(s.action(at(226), inUse = false, searching = false))                                    // back to needing traffic
-        s.networkChanged(at(120))                                                                         // a minute later: a new event
-        assertEquals(at(135), s.nextRoundAt)
+    fun aNetworkChangeRestartsAQuickPassInFifteenSecondsInUseOrNotDebounced() {
+        val sch = AutoSchedule(); sch.reseed(0, lines, p, 0.5)
+        sch.networkChanged(s(100.0))
+        assertNull(sch.action(s(114.0), warm = false, watched = false, searching = false, current = "r1", due = all))
+        assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(115.0), warm = false, watched = false, searching = false, current = "r1", due = all))
+        sch.currentProbed(s(115.0), p)
+        assertEquals(AutoSchedule.Action.Probe(listOf("r2", "x1")), sch.action(s(115.0), warm = false, watched = false, searching = false, current = "r1", due = all))   // the quick pass, two at a time
+        sch.networkChanged(s(130.0))                                                                                        // within a minute: the same event
+        assertEquals(s(100.0), sch.lastNetworkAt)
+        assertEquals(AutoSchedule.Phase.FIRST, sch.phase)
     }
 
     @Test
-    fun trafficReturningAfterIdleBringsARoundAtOnce() {
-        val s = AutoSchedule()
-        s.roundDone(t0, mapOf("a" to 200L), p, 0.5, searching = false)
-        assertNull(s.action(at(500), inUse = false, searching = false))                                    // idle: the 180 s passed, nothing ran
-        s.wake(at(500))
-        assertEquals(AutoSchedule.Action.ROUND, s.action(at(500), inUse = true, searching = false))
-        val fresh = AutoSchedule()
-        fresh.wake(t0)                                                                                    // before the first race: nothing to wake
-        assertNull(fresh.action(t0, inUse = true, searching = false))
+    fun searchingIsTheFastTrickleOverEveryLineRetriesIgnored() {
+        val sch = AutoSchedule(); sch.reseed(0, listOf("a", "b", "c"), p, 0.5)
+        sch.searchingBegan(s(50.0))
+        assertEquals(AutoSchedule.Action.Probe(listOf("a", "b")), sch.action(s(50.0), warm = false, watched = false, searching = true, current = "a") { false })   // every line, the line in use too, two at a time
+        sch.searchStep(s(50.0), 2)
+        assertNull(sch.action(s(50.5), warm = false, watched = false, searching = true, current = "a", due = all))
+        assertEquals(AutoSchedule.Action.Probe(listOf("c", "a")), sch.action(s(51.0), warm = false, watched = false, searching = true, current = "a", due = all))
+    }
+
+    @Test
+    fun theFallbackLastsOnlyWhileTheTargetAnswersNobody() {
+        assertFalse(AutoSchedule.nextFallback(current = false, targetAnswered = true, fallbackAnswered = true))
+        assertFalse(AutoSchedule.nextFallback(current = false, targetAnswered = false, fallbackAnswered = false))   // a blip: nobody answers → stay
+        assertTrue(AutoSchedule.nextFallback(current = false, targetAnswered = false, fallbackAnswered = true))
+        assertFalse(AutoSchedule.nextFallback(current = true, targetAnswered = true, fallbackAnswered = false))     // the scout answers: back
+        assertTrue(AutoSchedule.nextFallback(current = true, targetAnswered = false, fallbackAnswered = true))
     }
 }

@@ -629,6 +629,7 @@ object AngConfigManager {
                 EthaSubscription.applyHeaders(it.subscription, response.headers)
                 response.headers[AppConfig.ETHA_AUTO_HEADER]?.let { v -> MmkvManager.encodeSettings(AppConfig.PREF_ETHA_AUTO_POLICY, v.trim()) }   // Auto's policy (AutoPolicy)
                 if (ours) EthaHopFetch.remember(response.headers)   // where the link hop inside Iran is now, for the next time nothing else answers
+                if (ours) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_HINT, response.headers[AppConfig.ETHA_HINT_HEADER]?.trim()?.takeIf { Hint.parse(it) != null }.orEmpty())   // the box's advice for Auto (Hint); none this fetch: none kept
                 MmkvManager.encodeSubscription(it.guid, it.subscription)
                 LogUtil.i(AppConfig.TAG, "Subscription updated: ${it.subscription.remarks}, $count configs")
                 return SubscriptionUpdateResult(

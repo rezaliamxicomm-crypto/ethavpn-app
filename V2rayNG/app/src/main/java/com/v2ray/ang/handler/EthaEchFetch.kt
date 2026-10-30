@@ -36,8 +36,8 @@ object EthaEchFetch {
     /** The tunnel's local proxy, for the fetch that goes through it. */
     data class TunnelProxy(val address: String, val user: String? = null, val password: String? = null)
 
-    /** What a fetch came to: the subscription, when there is one, and whether the server answered at all (any status). */
-    data class Outcome(val response: UrlContentResponse?, val answered: Boolean)
+    /** What a fetch came to: the subscription, when there is one, whether the server answered at all (any status), and when the box signed the answer (0 unsigned). */
+    data class Outcome(val response: UrlContentResponse?, val answered: Boolean, val signedAt: Long = 0L)
 
     /**
      * `url` fetched with ECH, on the phone's network and then through the tunnel. `response` is the body and headers
@@ -46,10 +46,10 @@ object EthaEchFetch {
     fun fetch(url: String, subscriptionId: String?, userAgent: String?, headers: Map<String, String> = emptyMap()): Outcome {
         val stored = storedAddresses(subscriptionId)
         val direct = call(buildRequest(url, stored, userAgent, headers = headers), "on the phone's network")
-        if (answered(direct)) return Outcome(toResponse(direct), true)   // the server answered, whatever it said: through the tunnel it says the same
+        if (answered(direct)) return Outcome(toResponse(direct), true, direct?.signedAt ?: 0L)   // the server answered, whatever it said: through the tunnel it says the same
         val proxy = TunnelProxy("127.0.0.1:${SettingsManager.getHttpPort()}", SettingsManager.getSocksUsername(), SettingsManager.getSocksPassword())
         val tunnel = call(buildRequest(url, stored, userAgent, proxy, headers), "through the tunnel")
-        return Outcome(toResponse(tunnel), answered(tunnel))
+        return Outcome(toResponse(tunnel), answered(tunnel), tunnel?.signedAt ?: 0L)
     }
 
     internal fun call(request: EchFetchRequest, way: String): EchFetchResult? {
@@ -67,14 +67,30 @@ object EthaEchFetch {
         if (!got) {
             LogUtil.w(AppConfig.TAG, "fetch $way gave no subscription: ${describe(result)}")
         } else {
-            LogUtil.i(AppConfig.TAG, "Subscription fetched ${if (result!!.echAccepted) "with ECH" else "plain"} $way via ${result.address} (key: ${result.keySource})")
+            LogUtil.i(AppConfig.TAG, "Subscription fetched ${if (result!!.echAccepted) "with ECH" else "plain"} $way via ${result.address} (key: ${result.keySource}, signed: ${result.signed ?: "-"})")
         }
         return result
     }
 
-    /** Pure: the server itself answered, with ECH — any status. Only a fetch that reached nobody is worth another way. */
+    /** Pure: the server itself answered, with ECH — any status — and, for a subscription or an expiry, with the box's signature. */
     fun answered(result: EchFetchResult?): Boolean =
-        result != null && result.error.isNullOrEmpty() && result.echAccepted && result.status > 0
+        result != null && result.error.isNullOrEmpty() && result.echAccepted && result.status > 0 && trusted(result)
+
+    /**
+     * Pure: the box's own word (2.1). A subscription (200) or an expiry (403) counts only with the box's signature on it
+     * (echfetch/signature.go against AppConfig.ETHA_SIGN_KEYS): the hop inside Iran terminates TLS, and without this a
+     * seized hop could hand the app other lines, a herding hint or a false expiry. Any other status carries no signature
+     * and is taken as it is (nothing of it is acted upon beyond a message). A build pinning no key checks nothing.
+     */
+    fun trusted(result: EchFetchResult): Boolean {
+        if (result.status != 200 && result.status != 403) return true
+        if (AppConfig.ETHA_SIGN_KEYS.isEmpty()) return true
+        return result.signed == "ok"
+    }
+
+    /** Pure: signed longer ago than ETHA_SIGNED_STALE_SEC — taken only when no fresher answer arrives (a hop replaying an old one). */
+    fun stale(result: EchFetchResult?, nowSec: Long = System.currentTimeMillis() / 1000): Boolean =
+        result != null && result.signedAt > 0 && nowSec - result.signedAt > AppConfig.ETHA_SIGNED_STALE_SEC
 
     /** Pure: the request the core gets — for the phone's own network, or with [proxy] for the way through the tunnel. */
     fun buildRequest(url: String, stored: List<String>, userAgent: String?, proxy: TunnelProxy? = null, headers: Map<String, String> = emptyMap()): EchFetchRequest = EchFetchRequest(
@@ -90,6 +106,7 @@ object EthaEchFetch {
         proxyUser = proxy?.user.orEmpty(),
         proxyPassword = proxy?.password.orEmpty(),
         headers = headers,
+        signKeys = AppConfig.ETHA_SIGN_KEYS,
     )
 
     /** Pure: of (transport, address) pairs, the addresses of the lines that dial Cloudflare — never a relay's (since 2026-10-24 the first lines of a subscription). */
@@ -102,7 +119,7 @@ object EthaEchFetch {
 
     /** Pure: a 2xx answer that came with ECH accepted → its body and headers; anything else → null. */
     fun toResponse(result: EchFetchResult?): UrlContentResponse? {
-        if (result == null || !result.error.isNullOrEmpty() || !result.echAccepted) return null
+        if (result == null || !result.error.isNullOrEmpty() || !result.echAccepted || !trusted(result)) return null
         val body = result.body.orEmpty()
         if (result.status !in 200..299 || body.isEmpty()) return null
         return UrlContentResponse(body, result.headers.orEmpty())
@@ -113,6 +130,7 @@ object EthaEchFetch {
         result == null -> "no result from the core"
         !result.error.isNullOrEmpty() -> result.error.orEmpty()
         !result.echAccepted && result.keySource != "plain" -> "ECH not accepted"
+        !trusted(result) -> "status ${result.status}, signature ${result.signed ?: "unchecked"}"
         result.body.isNullOrEmpty() -> "status ${result.status}, empty body"
         else -> "status ${result.status}"
     }

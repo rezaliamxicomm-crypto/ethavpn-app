@@ -49,4 +49,12 @@ class EthaReportTest {
         assertTrue(a != EthaReport.fingerprint(listOf(k("1.1.1.1", "x", "u2"), k("2.2.2.2", "y", "u2"))))   // a rotated user id must reach the running core
         assertEquals(EthaReport.fingerprint(listOf(k("1.1.1.1", "x"))), EthaReport.fingerprint(listOf(k("1.1.1.1", "x"))))   // nothing of the ECH configuration is in the key
     }
+
+    @Test
+    fun theRateRidesAfterTheSwitchFlagOnlyWhenThereIsOne() {
+        val with = EthaReport.build(1_800_000_000_000L, "auto", "EthaVPN-REALITY-relay-FRA4-443", false, listOf("EthaVPN-REALITY-relay-FRA4-443" to 200L), rateKbps = 18500L)
+        assertEquals("v=1;t=1800000000;trig=auto;use=REALITY-relay-FRA4-443;sw=0;r=18500;l=REALITY-relay-FRA4-443:200", with)
+        val without = EthaReport.build(1_800_000_000_000L, "auto", "EthaVPN-REALITY-relay-FRA4-443", false, listOf("EthaVPN-REALITY-relay-FRA4-443" to 200L))
+        assertEquals("v=1;t=1800000000;trig=auto;use=REALITY-relay-FRA4-443;sw=0;l=REALITY-relay-FRA4-443:200", without)
+    }
 }

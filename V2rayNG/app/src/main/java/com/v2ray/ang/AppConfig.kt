@@ -171,6 +171,17 @@ object AppConfig {
     val ETHA_LINK_HOPS = listOf("www.harlow-systems.org" to "185.83.210.148")
     val ETHA_HOP_SUB_HOSTS = listOf("www.harlow-systems.org", "harlow-systems.org", "www.selvanemetricsz.com", "selvanemetricsz.com")
     const val ETHA_LINK_HOPS_HEADER = "x-etha-link-hops"
+    // The signed answer (2.1): the box signs every subscription answer with an Ed25519 key only it holds; the core
+    // (echfetch/signature.go) checks it against these public keys — A in use, B the spare the operator holds. An answer
+    // whose signature is missing, forged or made with a key not here counts as no answer (EthaEchFetch.trusted).
+    // Generated 2026-10-30 (/opt/staging/auto-2.1, keygen).
+    val ETHA_SIGN_KEYS = listOf("x1P7PGU48fnmDii+oUqRq2BNEc/JKhldw2oDKIYC9RY=", "nEb0S15kOFA081vRo8SwKijoFZopS5Ot4zrHRoxqT6I=")
+    const val ETHA_SIG_AT_HEADER = "x-etha-sig-at"
+    const val ETHA_SIGNED_STALE_SEC = 3600L                  // an answer signed longer ago is taken only when nothing fresher comes (a hop replaying an old one)
+    const val ETHA_HINT_HEADER = "x-etha-hint"               // the box's ranking of the lines on this network (Hint): advice for Auto
+    const val PREF_ETHA_HINT = "pref_etha_hint"              // the last hint, kept for the next Connect
+    const val PREF_ETHA_SIGNED_AT = "pref_etha_signed_at"    // the signed time of the last answer taken: an older one is never taken again
+    const val PREF_ETHA_LINE_HEALTH = "pref_etha_line_health:"   // + a network signature: what Auto knows of each line there (LineHealth)
     // The app's own updates (/dl/ on the service), not the link: this one address only (operator's rule) —
     // no fallback host, no GitHub. latest.json and the APK both come from here, and the APK must match the
     // sha256 latest.json names. (1.2.2 fell back to fra.mobileiphone.org, 1.1.5 and older read only that;
@@ -263,7 +274,8 @@ object AppConfig {
     const val MSG_ETHA_SWITCHED = 83        // service → UI: new connections take this line (content: its guid)
     const val MSG_ETHA_ROUND_DONE = 84      // service → UI: the round the customer asked for ended ("switched" | "kept" | "none")
     const val MSG_ETHA_LATENCY = 85         // service → UI: the line in use was measured (content: ms, -1 failed)
-    const val MSG_ETHA_STATE = 86           // service → UI: "searching" (no line answers; Auto keeps trying) or "ok"
+    const val MSG_ETHA_STATE = 86           // service → UI: "searching" (no line answers; Auto keeps trying), "outage" (the same, and the box says the network blocks every line) or "ok"
+    const val MSG_ETHA_WATCH = 87           // UI → service: the Home screen is showing the chip; the line in use is kept fresh for it (every 10 s while shown)
 
     /** Notification channel IDs and names. */
     const val RAY_NG_CHANNEL_ID = "RAY_NG_M_CH_ID"

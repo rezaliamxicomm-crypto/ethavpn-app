@@ -4,40 +4,51 @@ import com.v2ray.ang.AppConfig
 
 /**
  * The rules of Auto — the same in both apps (the iOS app's AutoPolicy). The running core holds every line of the
- * subscription behind one balancer; the service measures the lines through that core (core/EthaAuto) and holds the
- * balancer to the best, so a change of line moves new connections only and cuts nothing that is open. The numbers
- * here are the policy's defaults; the service's header X-Etha-Auto ("round=180,failed=900,idle=600,margin=15,
- * floor=25,stall=8,timeout=5,conc=8,fresh=600,search=60,sfetch=300") replaces any of them on the next fetch, so they
- * change without a release.
+ * subscription behind one balancer; the service measures the lines through that core (core/EthaAuto) as a trickle,
+ * never in bursts, and holds the balancer to the best, so a change of line moves new connections only and cuts nothing
+ * that is open. The numbers here are the policy's defaults; the service's header X-Etha-Auto ("round=180,failed=900,
+ * idle=600,margin=15,floor=25,stall=4,timeout=5,conc=8,fresh=600,search=60,sfetch=300,pace=1,cur=30,jitter=10,dwell=90,
+ * persist=2,cap=7200,warm=20,fover=1500") replaces any of them on the next fetch, so they change without a release.
  */
 data class AutoPolicy(
-    /** every line measured again this often, while the tunnel is in use */
+    /** every line measured once in this long, one probe at a time (the trickle), while the radio is warm or the app on screen */
     val roundSec: Int = 180,
-    /** a line that failed its last probe is tried again this often instead */
+    /** a line that failed its last probe is tried again after this long, doubling at each failure (LineHealth) */
     val failedRetrySec: Int = 900,
-    /** no traffic for this long: no rounds until traffic returns */
+    /** no traffic for this long: idle — traffic returning probes the line in use and resumes the trickle at once */
     val idleSec: Int = 600,
     /** another line must beat the line in use by this share of its time… */
     val marginPct: Int = 15,
     /** …and by at least this many ms, to take over */
     val floorMs: Int = 25,
-    /** bytes going out and none coming back for this long: the line in use is probed at once */
-    val stallSec: Int = 8,
+    /** bytes going out and none coming back for this long: the line in use and the best alternative are probed at once */
+    val stallSec: Int = 4,
     /** one probe request's window; a line that does not answer within it counts as failed */
     val probeTimeoutSec: Int = 5,
-    /** lines probed at once in a round (the first race and a "Ping all" measure every line at once) */
+    /** lines probed at once by a manual test (Test latency measures every line at once) */
     val concurrency: Int = 8,
     /** results younger than this are trusted at Connect */
     val freshSec: Int = 600,
-    /** no line answers (the Searching state): every line measured again this often, in use or not */
+    /** no line answers (the Searching state): every line probed again within this long, in use or not */
     val searchSec: Int = 60,
     /** …and the subscription fetched again this often, for lines the box may have replaced */
     val searchFetchSec: Int = 300,
-    /** a settling round this long after the first race of a connection (0 = none): the race measures every line at
-     *  once on a core a second old and reads high, so the first pick can be a poor one for a whole round (2026-10-30) */
-    val settleSec: Int = 10,
-    /** each round's interval is roundSec give or take this share, drawn anew every round, so the bursts are not periodic */
+    /** the first pass after Connect (and after a network change) goes best-known-first at this pace per step, two at a time */
+    val firstPaceSec: Int = 1,
+    /** the line in use is probed again this often while the app is on screen; otherwise its health is read from the traffic */
+    val currentSec: Int = 30,
+    /** each step of the trickle is the pace give or take this share, so the probes are not metronomic */
     val jitterPct: Int = 10,
+    /** no latency-only move within this long of the last move (a failover ignores it) */
+    val dwellSec: Int = 90,
+    /** a latency-only move needs the candidate ahead by the margin at this many consecutive pass ends (one when ahead by twice the margin) */
+    val persistPasses: Int = 2,
+    /** a failed line's retry doubles from failedRetrySec at each failure up to this */
+    val retryCapSec: Int = 7200,
+    /** a steady step fires only while bytes moved within this long (the radio is up anyway) or the app is on screen */
+    val warmSec: Int = 20,
+    /** the window of the failover probes (the line in use and the best alternative together) */
+    val failoverMs: Int = 1500,
 ) {
     val roundMs: Long get() = roundSec * 1000L
     val idleMs: Long get() = idleSec * 1000L
@@ -45,24 +56,29 @@ data class AutoPolicy(
     val freshMs: Long get() = freshSec * 1000L
     val searchMs: Long get() = searchSec * 1000L
     val searchFetchMs: Long get() = searchFetchSec * 1000L
+    val warmMs: Long get() = warmSec * 1000L
+    val currentMs: Long get() = currentSec * 1000L
+    val dwellMs: Long get() = dwellSec * 1000L
 
     /**
      * Should new connections move from the line in use (its last time, -1 failed, 0 not measured) to the best line
      * (bestMs > 0)? Yes when the line in use failed, or when the best is better by the margin — at least floorMs and
-     * at least marginPct of the line in use. A line not measured yet keeps its connections until its own result is in.
+     * at least marginPct of the line in use, both times [factor] (2 for "clearly better"). A line not measured yet
+     * keeps its connections until its own result is in.
      */
-    fun shouldSwitch(currentMs: Long, bestMs: Long): Boolean {
+    fun shouldSwitch(currentMs: Long, bestMs: Long, factor: Long = 1): Boolean {
         if (bestMs <= 0) return false
         if (currentMs < 0) return true
         if (currentMs == 0L) return false
-        val margin = maxOf(floorMs.toLong(), currentMs * marginPct / 100)
+        val margin = maxOf(floorMs.toLong() * factor, currentMs * marginPct * factor / 100)
         return bestMs < currentMs - margin
     }
 
     /**
      * The line new connections should take, or null to stay: the lowest measured time (AutoSelect.best: an exact tie
      * goes to the earlier line) when the line in use failed or is beaten by the margin; never while pinned, never
-     * without a measured line, and a line in use that is not among the candidates counts as failed.
+     * without a measured line, and a line in use that is not among the candidates counts as failed. (The service's
+     * decisions are AutoDecision's since 2.1; this is the app's test and the offline pick.)
      */
     fun target(current: String?, candidates: List<AutoSelect.Candidate>, pinned: Boolean): String? {
         if (pinned) return null
@@ -84,14 +100,6 @@ data class AutoPolicy(
         val base = samples.lastOrNull { it.first <= nowMs - stallSec * 1000L } ?: return false
         if (base === newest) return false
         return newest.second - base.second >= STALL_MIN_UP_BYTES && newest.third - base.third <= 0
-    }
-
-    /** Is a line due for a probe in this round? Failed lines wait failedRetrySec, the rest roundSec. */
-    /** The next round's interval: roundSec moved by up to jitterPct either way, `r` a draw in 0 ..< 1 (handed in so the
-     *  rule is testable): 0 → the shortest, 0.5 → roundSec, 1 → the longest. */
-    fun jitteredRoundMs(r: Double): Long {
-        val share = jitterPct / 100.0 * (2 * r.coerceIn(0.0, 1.0) - 1)
-        return (roundSec * 1000L * (1 + share)).toLong()
     }
 
     companion object {
@@ -121,8 +129,14 @@ data class AutoPolicy(
                     "fresh" -> p = p.copy(freshSec = v.coerceIn(0, 86400))
                     "search" -> p = p.copy(searchSec = v.coerceIn(15, 600))
                     "sfetch" -> p = p.copy(searchFetchSec = v.coerceIn(60, 3600))
-                    "settle" -> p = p.copy(settleSec = v.coerceIn(0, 120))
+                    "pace" -> p = p.copy(firstPaceSec = v.coerceIn(1, 30))
+                    "cur" -> p = p.copy(currentSec = v.coerceIn(10, 300))
                     "jitter" -> p = p.copy(jitterPct = v.coerceIn(0, 50))
+                    "dwell" -> p = p.copy(dwellSec = v.coerceIn(0, 3600))
+                    "persist" -> p = p.copy(persistPasses = v.coerceIn(1, 10))
+                    "cap" -> p = p.copy(retryCapSec = v.coerceIn(60, 86400))
+                    "warm" -> p = p.copy(warmSec = v.coerceIn(5, 600))
+                    "fover" -> p = p.copy(failoverMs = v.coerceIn(500, 10000))
                 }
             }
             return p

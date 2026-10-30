@@ -81,6 +81,7 @@ class HomeActivity : HelperBaseActivity() {
     private var clipboardTried: String? = null   // the link last taken from the clipboard (no second import of the same one)
     private var testing = false           // Test latency is running: the button is busy, the chip says so
     private var searching = false         // Auto found no line answering (the service's state)
+    private var outage = false            // …and the box says this network blocks every line right now (the hint's word): the text says so
     private var latencyMs = 0L            // the line in use's last time: ms, -1 failed, 0 none yet
     private var latencyAt = 0L
     private var outcome = 0               // the string under the buttons after a test, 0 = none
@@ -133,7 +134,7 @@ class HomeActivity : HelperBaseActivity() {
             rateOnLatency = running && connecting   // the customer's own Connect, not the state found on opening
             connecting = false
             if (!running) {
-                searching = false; testing = false; latencyMs = 0L; latencyAt = 0L; outcome = 0
+                searching = false; outage = false; testing = false; latencyMs = 0L; latencyAt = 0L; outcome = 0
             }
             render()
         }
@@ -147,7 +148,8 @@ class HomeActivity : HelperBaseActivity() {
             }
         }
         mainViewModel.autoState.observe(this) { state ->
-            searching = state == "searching"
+            searching = state == "searching" || state == "outage"
+            outage = state == "outage"
             if (searching) outcome = 0
             render()
         }
@@ -184,6 +186,20 @@ class HomeActivity : HelperBaseActivity() {
         refreshSubscription()
         render()
         refreshQuietlyIfStale()
+        watch.run()
+    }
+
+    override fun onPause() {
+        binding.root.removeCallbacks(watch)
+        super.onPause()
+    }
+
+    /** While the chip is on screen the service keeps the line in use's number fresh (every 30 s): told every 10 s (Auto's "watched"). */
+    private val watch = object : Runnable {
+        override fun run() {
+            if (mainViewModel.isRunning.value == true) MessageUtil.sendMsg2Service(this@HomeActivity, AppConfig.MSG_ETHA_WATCH, "")
+            binding.root.postDelayed(this, 10_000L)
+        }
     }
 
     override fun onDestroy() {
@@ -322,7 +338,7 @@ class HomeActivity : HelperBaseActivity() {
     private fun renderOutcome() {
         val running = mainViewModel.isRunning.value == true
         val text = when {
-            running && searching -> getString(R.string.etha_searching_hint)
+            running && searching -> getString(if (outage) R.string.etha_lines_blocked else R.string.etha_searching_hint)   // the box's word when every phone of the network fails
             outcome != 0 -> getString(outcome)
             else -> ""
         }

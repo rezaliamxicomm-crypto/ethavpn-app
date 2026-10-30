@@ -66,6 +66,7 @@ type echFetchRequest struct {
 	ProxyPassword string            `json:"proxyPassword"` //
 	Headers       map[string]string `json:"headers"`       // extra request headers, sent on every way (X-Etha-Lines: what Auto measured)
 	Plain         bool              `json:"plain"`         // no ECH: a plain TLS fetch to the addresses given, the url's host as the certificate's name (the link hop inside Iran)
+	SignKeys      []string          `json:"signKeys"`      // the pinned public keys (base64, raw Ed25519): the answer's signature is checked against them (signature.go)
 }
 
 type echFetchResult struct {
@@ -75,6 +76,9 @@ type echFetchResult struct {
 	EchAccepted bool              `json:"echAccepted"`
 	Address     string            `json:"address"`
 	KeySource   string            `json:"keySource"` // "dns:<resolver>", "pinned" or "retry"; "plain" when no ECH was asked
+	Signed      string            `json:"signed"`    // the answer's signature against the request's signKeys: ok | none | bad | unknown-key | nokeys (signature.go)
+	SignedAt    int64             `json:"signedAt"`  // the time the box signed it (unix seconds), 0 when unsigned
+	SignKeyID   string            `json:"signKeyId"` // which pinned key verified it
 	Error       string            `json:"error"`
 }
 
@@ -109,7 +113,11 @@ func FetchSubscriptionEch(requestJSON string) string {
 	if err := json.Unmarshal([]byte(requestJSON), &req); err != nil {
 		return marshalEchResult(echFetchResult{Error: "request: " + err.Error()})
 	}
-	return marshalEchResult(fetchSubscriptionEch(req))
+	res := fetchSubscriptionEch(req)
+	if res.Error == "" && res.Status > 0 {
+		res.Signed, res.SignedAt, res.SignKeyID = sigVerify(res.Headers, []byte(res.Body), req.SignKeys)
+	}
+	return marshalEchResult(res)
 }
 
 func marshalEchResult(r echFetchResult) string {

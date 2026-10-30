@@ -553,6 +553,7 @@
     <string name="etha_no_answer_yet">هنوز جوابی نیامده</string>
     <string name="etha_no_line_answers">هیچ خطی جواب نمی‌دهد</string>
     <string name="etha_searching_hint">«بروزرسانی» را بزنید. باز هم نشد؟ «پشتیبانی» را بزنید.</string>
+    <string name="etha_lines_blocked">خطوط روی این شبکه فعلاً مسدود شده‌اند. در حال رفع آن هستیم.</string>
     <string name="etha_switched_faster">به خط سریع‌تری رفت</string>
     <string name="etha_on_fastest">روی سریع‌ترین خط هستید</string>
     <string name="etha_ready">آماده · سریع‌ترین خط برای اتصال بعدی انتخاب شد</string>

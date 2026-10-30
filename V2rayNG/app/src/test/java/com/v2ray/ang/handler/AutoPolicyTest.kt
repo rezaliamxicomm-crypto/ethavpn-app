@@ -46,7 +46,7 @@ class AutoPolicyTest {
         val t0 = 1_000_000L
         val s = listOf(Triple(t0, 1000L, 5000L), Triple(t0 + 4000, 4000L, 5000L), Triple(t0 + 8000, 9000L, 5000L))
         assertTrue(p.stalled(s, t0 + 8000))
-        assertFalse(p.stalled(s, t0 + 7000))                                             // the window is not full yet
+        assertFalse(p.stalled(s, t0 + 3000))                                             // the window is not full yet
         assertFalse(p.stalled(listOf(Triple(t0, 1000L, 5000L), Triple(t0 + 8000, 1500L, 5000L)), t0 + 8000))   // too little went out
         assertFalse(p.stalled(listOf(Triple(t0, 1000L, 5000L), Triple(t0 + 8000, 9000L, 5100L)), t0 + 8000))   // something came back
         assertFalse(p.stalled(listOf(Triple(t0, 1000L, 5000L)), t0 + 8000))
@@ -55,12 +55,12 @@ class AutoPolicyTest {
     @Test
     fun theHeaderReplacesValuesWithinBoundsAndIgnoresTheRest() {
         val q = AutoPolicy.parse("round=120, failed=600;idle=300,margin=10,floor=40,stall=6,timeout=4,conc=16,fresh=900,colour=blue,round=x")
-        assertEquals(AutoPolicy(120, 600, 300, 10, 40, 6, 4, 16, 900), q)
+        assertEquals(AutoPolicy(roundSec = 120, failedRetrySec = 600, idleSec = 300, marginPct = 10, floorMs = 40, stallSec = 6, probeTimeoutSec = 4, concurrency = 16, freshSec = 900), q)
         assertEquals(AutoPolicy(), AutoPolicy.parse(null))
         assertEquals(AutoPolicy(), AutoPolicy.parse(" "))
         assertEquals(AutoPolicy(), AutoPolicy.parse("garbage"))
         val clamped = AutoPolicy.parse("round=5,failed=1,idle=1,margin=200,floor=-3,stall=1,timeout=0,conc=0,fresh=-1")
-        assertEquals(AutoPolicy(30, 30, 60, 90, 0, 3, 2, 1, 0), clamped)
+        assertEquals(AutoPolicy(roundSec = 30, failedRetrySec = 30, idleSec = 60, marginPct = 90, floorMs = 0, stallSec = 3, probeTimeoutSec = 2, concurrency = 1, freshSec = 0), clamped)
         assertEquals(30, AutoPolicy.parse("margin=30", base = q).marginPct)
         assertEquals(120, AutoPolicy.parse("margin=30", base = q).roundSec)
     }
@@ -80,17 +80,19 @@ class AutoPolicyTest {
     }
 
     @Test
-    fun theSettlingRoundAndTheJitterComeFromTheHeaderToo() {
-        assertEquals(10, AutoPolicy().settleSec)
-        assertEquals(10, AutoPolicy().jitterPct)
-        val q = AutoPolicy.parse("settle=0,jitter=50")
-        assertEquals(0, q.settleSec); assertEquals(50, q.jitterPct)
-        val clamped = AutoPolicy.parse("settle=999,jitter=99")
-        assertEquals(120, clamped.settleSec); assertEquals(50, clamped.jitterPct)
-        val p = AutoPolicy()
-        assertEquals(180_000L, p.jitteredRoundMs(0.5))
-        assertEquals(162_000L, p.jitteredRoundMs(0.0))      // 10 % either way: 162–198 s
-        assertEquals(198_000L, p.jitteredRoundMs(1.0))
-        assertEquals(180_000L, AutoPolicy.parse("jitter=0").jitteredRoundMs(0.9))
+    fun theTrickleKnobsComeFromTheHeaderToo() {
+        val d = AutoPolicy()
+        assertEquals(4, d.stallSec); assertEquals(1, d.firstPaceSec); assertEquals(30, d.currentSec); assertEquals(10, d.jitterPct)
+        assertEquals(90, d.dwellSec); assertEquals(2, d.persistPasses); assertEquals(7200, d.retryCapSec); assertEquals(20, d.warmSec); assertEquals(1500, d.failoverMs)
+        val q = AutoPolicy.parse("pace=5,cur=60,jitter=50,dwell=300,persist=3,cap=600,warm=60,fover=3000")
+        assertEquals(5, q.firstPaceSec); assertEquals(60, q.currentSec); assertEquals(50, q.jitterPct)
+        assertEquals(300, q.dwellSec); assertEquals(3, q.persistPasses); assertEquals(600, q.retryCapSec); assertEquals(60, q.warmSec); assertEquals(3000, q.failoverMs)
+        val clamped = AutoPolicy.parse("pace=0,cur=9999,jitter=99,dwell=-5,persist=0,cap=1,warm=1,fover=1")
+        assertEquals(1, clamped.firstPaceSec); assertEquals(300, clamped.currentSec); assertEquals(50, clamped.jitterPct)
+        assertEquals(0, clamped.dwellSec); assertEquals(1, clamped.persistPasses); assertEquals(60, clamped.retryCapSec); assertEquals(5, clamped.warmSec); assertEquals(500, clamped.failoverMs)
+        // twice the margin: 15 % and 25 ms become 30 % and 50 ms
+        assertTrue(d.shouldSwitch(currentMs = 400, bestMs = 270, factor = 2))    // 400 − 120 = 280: 270 is clearly better
+        assertFalse(d.shouldSwitch(currentMs = 400, bestMs = 290, factor = 2))
+        assertTrue(d.shouldSwitch(currentMs = 400, bestMs = 290))                // by the plain margin it is
     }
 }

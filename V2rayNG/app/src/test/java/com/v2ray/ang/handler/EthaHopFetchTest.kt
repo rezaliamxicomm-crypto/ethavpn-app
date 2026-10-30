@@ -46,16 +46,20 @@ class EthaHopFetchTest {
 
     @Test
     fun answeredIsAnyStatusAndAResponseIsA2xxBody() {
-        assertTrue(EthaHopFetch.answered(EchFetchResult(status = 403, keySource = "plain")))
-        assertTrue(EthaHopFetch.answered(EchFetchResult(status = 200, body = "x", keySource = "plain")))
+        assertTrue(EthaHopFetch.answered(EchFetchResult(status = 403, keySource = "plain", signed = "ok")))
+        assertTrue(EthaHopFetch.answered(EchFetchResult(status = 200, body = "x", keySource = "plain", signed = "ok")))
+        assertFalse(EthaHopFetch.answered(EchFetchResult(status = 200, body = "x", keySource = "plain")))              // a hop's answer without the box's signature is no answer (2.1)
+        assertFalse(EthaHopFetch.answered(EchFetchResult(status = 403, keySource = "plain", signed = "bad")))
+        assertTrue(EthaHopFetch.answered(EchFetchResult(status = 404, keySource = "plain")))
         assertFalse(EthaHopFetch.answered(EchFetchResult(status = 0)))
         assertFalse(EthaHopFetch.answered(EchFetchResult(status = 200, body = "x", error = "plain: dial")))
         assertFalse(EthaHopFetch.answered(null))
-        assertNotNull(EthaHopFetch.toResponse(EchFetchResult(status = 200, body = "x", headers = mapOf("a" to "b"))))
-        assertEquals(mapOf("a" to "b"), EthaHopFetch.toResponse(EchFetchResult(status = 200, body = "x", headers = mapOf("a" to "b")))?.headers)
-        assertNull(EthaHopFetch.toResponse(EchFetchResult(status = 403, body = "x")))
-        assertNull(EthaHopFetch.toResponse(EchFetchResult(status = 200, body = "")))
-        assertEquals("status 403", EthaEchFetch.describe(EchFetchResult(status = 403, body = "x", keySource = "plain")))   // a plain answer: never "ECH not accepted"
-        assertEquals("status 403, empty body", EthaEchFetch.describe(EchFetchResult(status = 403, keySource = "plain")))
+        assertNotNull(EthaHopFetch.toResponse(EchFetchResult(status = 200, body = "x", headers = mapOf("a" to "b"), signed = "ok")))
+        assertEquals(mapOf("a" to "b"), EthaHopFetch.toResponse(EchFetchResult(status = 200, body = "x", headers = mapOf("a" to "b"), signed = "ok"))?.headers)
+        assertNull(EthaHopFetch.toResponse(EchFetchResult(status = 200, body = "x", headers = mapOf("a" to "b"))))     // unsigned: nothing
+        assertNull(EthaHopFetch.toResponse(EchFetchResult(status = 403, body = "x", signed = "ok")))
+        assertNull(EthaHopFetch.toResponse(EchFetchResult(status = 200, body = "", signed = "ok")))
+        assertEquals("status 403", EthaEchFetch.describe(EchFetchResult(status = 403, body = "x", keySource = "plain", signed = "ok")))   // a plain answer: never "ECH not accepted"
+        assertEquals("status 403, empty body", EthaEchFetch.describe(EchFetchResult(status = 403, keySource = "plain", signed = "ok")))
     }
 }

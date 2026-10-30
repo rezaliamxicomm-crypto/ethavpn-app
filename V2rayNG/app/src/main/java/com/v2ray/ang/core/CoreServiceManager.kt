@@ -18,6 +18,7 @@ import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.extension.isComplexType
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
+import com.v2ray.ang.handler.EthaNetwork
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.NotificationManager
 import com.v2ray.ang.handler.SettingsManager
@@ -300,7 +301,7 @@ object CoreServiceManager {
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core started successfully")
         auto?.stop()
         auto = lines?.let {
-            EthaAuto(service, coreController, it, guid, onLinesChanged = {
+            EthaAuto(service, coreController, it, guid, EthaNetwork.signature(service), onLinesChanged = {
                 // a fetch while searching brought other lines: the core restarts on them (the same path as a settings change)
                 MessageUtil.sendMsg2Service(service, AppConfig.MSG_STATE_RESTART, "")
             }).also { engine -> engine.start() }
@@ -310,7 +311,8 @@ object CoreServiceManager {
     /** Wi-Fi ↔ mobile: what Auto measured no longer holds; it measures again once the network has settled. */
     fun onNetworkChanged() {
         if (!coreController.isRunning) return
-        auto?.onNetworkChanged()
+        val context = serviceControl?.get()?.getService() ?: return
+        auto?.onNetworkChanged(EthaNetwork.signature(context))
     }
 
     /**
@@ -559,6 +561,10 @@ object CoreServiceManager {
 
                 AppConfig.MSG_ETHA_PING_ALL -> {
                     auto?.pingAll()
+                }
+
+                AppConfig.MSG_ETHA_WATCH -> {
+                    auto?.noteWatched()   // the Home screen is showing the chip: the line in use is kept fresh for it
                 }
             }
 
