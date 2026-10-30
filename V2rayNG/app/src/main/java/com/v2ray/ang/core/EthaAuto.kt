@@ -7,6 +7,7 @@ import com.v2ray.ang.extension.isComplexType
 import com.v2ray.ang.extension.isNotNullEmpty
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.AutoPolicy
+import com.v2ray.ang.handler.AutoSchedule
 import com.v2ray.ang.handler.AutoSelect
 import com.v2ray.ang.handler.EthaReport
 import com.v2ray.ang.handler.MmkvManager
@@ -195,7 +196,7 @@ class EthaAuto(
         val ids = schedule.linesForRound(now, lines.map { it.guid }, searching).toSet()
         val due = lines.filter { it.guid in ids }
         if (due.isEmpty()) {   // every line failed and waits its retry: the clock moves on, nothing is measured
-            schedule.roundDone(now, emptyMap(), policy, Math.random(), searching)
+            schedule.roundDone(now, emptyMap<String, Long>(), policy, Math.random(), searching)
             return
         }
         val trigger = if (schedule.forced) "network" else "auto"
