@@ -112,7 +112,8 @@ class EthaAuto(
         // the start line: the best this network is known to have, else the hint's first, else what the service chose
         if (health.lastMs(labels.getValue(current)) == null) {
             val known = health.bestKnown(all)
-            val best = known ?: hint?.arrange(all)?.firstOrNull { it !in (hint.dead) }
+            val advice = hint
+            val best = known ?: advice?.arrange(all)?.firstOrNull { it !in advice.dead }
             val guid = best?.let { byLabel[it] }
             if (guid != null && guid != current) switchTo(guid, if (known != null) "known best on $network" else "the box's advice", notify = false)
         }
@@ -289,8 +290,9 @@ class EthaAuto(
         val cur = byGuid[current] ?: return
         val all = lines.map { labels.getValue(it.guid) }
         val mine = labels.getValue(current)
+        val advice = hint
         val altLabel = health.bestKnown(all, except = mine)
-            ?: hint?.arrange(all)?.firstOrNull { it != mine && it !in hint.dead }
+            ?: advice?.arrange(all)?.firstOrNull { it != mine && it !in advice.dead }
             ?: all.firstOrNull { it != mine }
         val alt = altLabel?.let { byLabel[it] }?.let { byGuid[it] }
         val which = listOfNotNull(cur, alt)
