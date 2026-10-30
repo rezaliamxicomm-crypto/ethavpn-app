@@ -109,6 +109,17 @@ object EthaEchFetch {
         signKeys = AppConfig.ETHA_SIGN_KEYS,
     )
 
+    /** Pure: the last resort's request — the link fetched by name without ECH, through the core like every other way (2.1), so
+     *  the certificate and the box's signature are checked the same; no address given: the host's name is dialled. */
+    fun buildPlainRequest(url: String, userAgent: String?, headers: Map<String, String> = emptyMap()): EchFetchRequest = EchFetchRequest(
+        url = url,
+        userAgent = userAgent?.trim()?.takeIf { it.isNotEmpty() } ?: AppConfig.ETHA_USER_AGENT,
+        timeoutMs = TIMEOUT_MS,
+        headers = headers,
+        plain = true,
+        signKeys = AppConfig.ETHA_SIGN_KEYS,
+    )
+
     /** Pure: of (transport, address) pairs, the addresses of the lines that dial Cloudflare — never a relay's (since 2026-10-24 the first lines of a subscription). */
     fun addressesOf(lines: List<Pair<String?, String?>>): List<String> =
         lines.filter { it.first?.trim()?.lowercase() in CLOUDFLARE_TRANSPORTS }.mapNotNull { it.second?.trim()?.takeIf { s -> s.isNotEmpty() } }

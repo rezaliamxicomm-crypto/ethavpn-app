@@ -93,7 +93,6 @@ class EthaAuto(
     private val decision = AutoDecision()
     @Volatile private var network = network
     private var health = LineHealth.decode(MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_LINE_HEALTH + network))
-    private val hint: Hint? = Hint.parse(MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_HINT))
     private val samples = ArrayDeque<Triple<Long, Long, Long>>()  // wall time, bytes up, bytes down (the stall detector)
     private val rateSamples = ArrayDeque<Pair<Long, Long>>()      // monotonic time, bytes down (the rate window)
     @Volatile private var passRateKbps = 0L
@@ -105,6 +104,9 @@ class EthaAuto(
     @Volatile private var lastSearchFetchAt = 0L
     @Volatile private var lastFailoverFetchAt = -1_000_000L
     @Volatile private var movedInPass = false
+    private val probedSinceReport = HashSet<String>()
+    @Volatile private var hint: Hint? = Hint.parse(MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_HINT))
+    private var searchSteps = 0
     private val fetching = AtomicBoolean(false)
 
     fun start() {
@@ -236,11 +238,15 @@ class EthaAuto(
 
     // ---------------------------------------------------------------- the trickle (under the measuring lock)
 
-    /** The lines in the order the trickle takes them: this network's memory first, the box's advice where the memory is empty, else the subscription's. */
+    /** The lines in the order the trickle takes them: what this network's memory knows good, by time; then the lines it has
+     *  not seen, in the box's advised order where there is one (its dead ones last among them), else the subscription's;
+     *  then the lines the memory holds as failed. By guid. */
     private fun order(): List<String> {
         val all = lines.map { labels.getValue(it.guid) }
-        var arranged = health.bestFirst(all)
-        if (health.entries.isEmpty()) hint?.let { arranged = it.arrange(all) }
+        val good = health.bestFirst(all).filter { health.lastMs(it) != null && !health.isDead(it) }
+        val unseen = all.filter { health.lastMs(it) == null && !health.isDead(it) }
+        val dead = all.filter { health.isDead(it) }
+        val arranged = good + (hint?.arrange(unseen) ?: unseen) + dead
         return arranged.mapNotNull { byLabel[it] }
     }
 
@@ -259,7 +265,7 @@ class EthaAuto(
         }
         record(out, which)
         val first = schedule.phase == AutoSchedule.Phase.FIRST
-        val passEnd = schedule.probed(mono(), which.size, policy, Math.random())
+        val passEnd = schedule.probed(mono(), which.map { it.guid }, policy, Math.random())
         if (first && decide(AutoDecision.Phase.FIRST, "first pass", notify = true)) movedInPass = true
         if (passEnd) {
             if (!first && decide(AutoDecision.Phase.PASS_END, "pass end", notify = true)) movedInPass = true
@@ -321,6 +327,8 @@ class EthaAuto(
         val out = measureOnce(which, which.size, if (schedule.fallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, policy.probeTimeoutMs)
         record(out, which)
         schedule.searchStep(mono(), which.size)
+        searchSteps += 1
+        if (searchSteps % 30 == 0) refreshHint()
         val found = which.firstOrNull { (out[it.guid] ?: -1L) > 0 }
         if (found != null && found.guid != current) {
             switchTo(found.guid, "a line answers again")
@@ -359,11 +367,14 @@ class EthaAuto(
         return out
     }
 
+    /** The lines measured through the running core; a line the core reports nothing for did not answer. A call that fails
+     *  outright (the core restarting) is no measurement: an empty map, nothing recorded, nothing judged. */
     private fun measureOnce(which: List<Line>, concurrency: Int, url: String, timeoutMs: Long): Map<String, Long> {
         val raw = try {
             controller.measureOutbounds(which.joinToString(",") { it.tag }, url, timeoutMs, concurrency.toLong())
         } catch (e: Exception) {
-            LogUtil.e(AppConfig.TAG, "Auto: the measurement failed", e); ""
+            LogUtil.e(AppConfig.TAG, "Auto: the measurement failed", e)
+            return emptyMap()
         }
         val byTag = which.associateBy { it.tag }
         val out = HashMap<String, Long>()
@@ -373,7 +384,7 @@ class EthaAuto(
             val line = byTag[entry.substring(0, i)] ?: continue
             out[line.guid] = entry.substring(i + 1).toLongOrNull() ?: continue
         }
-        for (line in which) if (line.guid !in out) out[line.guid] = -1L   // a line the core did not report did not answer
+        if (raw.isNotEmpty()) for (line in which) if (line.guid !in out) out[line.guid] = -1L   // a line the core did not report did not answer
         return out
     }
 
@@ -382,6 +393,7 @@ class EthaAuto(
         val wallSec = System.currentTimeMillis() / 1000
         for ((guid, ms) in out) {
             results[guid] = ms
+            synchronized(probedSinceReport) { probedSinceReport.add(guid) }
             MmkvManager.encodeServerTestDelayMillis(guid, ms)
             if (ms > 0) health.ok(labels.getValue(guid), ms, wallSec) else health.failed(labels.getValue(guid), wallSec, policy)
         }
@@ -423,11 +435,27 @@ class EthaAuto(
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_ETHA_LATENCY, (results[current] ?: 0L).toString())
     }
 
-    /** What was measured, kept for the next fetch (the header X-Etha-Lines), with the pass's best download rate. */
+    /** What was measured since the last report — the lines probed, not the ones waiting their retry with an old result —
+     *  kept for the next fetch (the header X-Etha-Lines), with the pass's best download rate. */
     private fun report(trigger: String, switched: Boolean) {
+        val probed = synchronized(probedSinceReport) { probedSinceReport.toSet() }
         val header = EthaReport.build(System.currentTimeMillis(), trigger, remarks[current], switched,
-            lines.map { (remarks[it.guid] ?: "") to (results[it.guid] ?: 0L) }, passRateKbps)
-        if (header != null) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, header)
+            lines.map { (remarks[it.guid] ?: "") to (if (it.guid in probed) (results[it.guid] ?: 0L) else 0L) }, passRateKbps)
+        if (header != null) {
+            MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, header)
+            synchronized(probedSinceReport) { probedSinceReport.clear() }
+        }
+    }
+
+    /** The box's latest advice (the fetch while searching brings a fresh hint): the outage flag follows it. */
+    private fun refreshHint() {
+        val fresh = Hint.parse(MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_HINT)) ?: return
+        if (fresh == hint) return
+        hint = fresh
+        if (searching) {
+            MessageUtil.sendMsg2UI(service, AppConfig.MSG_ETHA_STATE, if (fresh.outage) "outage" else "searching")
+            LogUtil.i(AppConfig.TAG, "Auto: the box's advice changed while searching (outage: ${fresh.outage})")
+        }
     }
 
     /** Searching = every line measured and none answering. Before entering it the line in use is probed against the
@@ -456,6 +484,7 @@ class EthaAuto(
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_ETHA_STATE, if (!dead) "ok" else if (outage) "outage" else "searching")
         val now = mono()
         if (dead) {
+            searchSteps = 0
             schedule.searchingBegan(now)
             report("search", false)
             searchFetch()

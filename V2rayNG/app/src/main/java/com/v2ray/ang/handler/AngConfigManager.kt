@@ -594,16 +594,26 @@ object AngConfigManager {
                 UrlContentResponse("")
             }
             if (response.body.isEmpty() && !answered) {
-                if (ours) LogUtil.w(AppConfig.TAG, "ECH and the hop got no answer: fetching the link without them, the last resort")
-                response = try {
-                    val plain = HttpUtil.getUrlContentWithHeaders(
+                response = if (ours) {
+                    // The last resort for our link: by name, without ECH — through the core like every other way (2.1), so the
+                    // certificate and the box's signature are checked the same; an answer signed before the one held is refused.
+                    LogUtil.w(AppConfig.TAG, "ECH and the hop got no answer: fetching the link by name without ECH, the last resort")
+                    val r = EthaEchFetch.call(EthaEchFetch.buildPlainRequest(url, userAgent, extraHeaders), "by name without ECH")
+                    val held = MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_SIGNED_AT)?.toLongOrNull() ?: 0L
+                    val taken = EthaHopFetch.answered(r) && EthaLinkFetch.replayVerdict(r!!.signedAt, held, System.currentTimeMillis() / 1000) != "older"
+                    if (taken) {
+                        if (report.isNotEmpty()) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, "")
+                        EthaLinkFetch.rememberSigned(r!!.signedAt)
+                        LogUtil.i(AppConfig.TAG, "Subscription answered by name without ECH (the last resort), status ${r.status}")
+                        EthaHopFetch.toResponse(r) ?: UrlContentResponse("")
+                    } else UrlContentResponse("")
+                } else try {
+                    HttpUtil.getUrlContentWithHeaders(
                         UrlContentRequest(
                             url = url,
                             userAgent = userAgent
                         )
                     )
-                    if (ours) LogUtil.i(AppConfig.TAG, "Subscription fetched without ECH (the last resort)")
-                    plain
                 } catch (e: Exception) {
                     LogUtil.e(AppConfig.TAG, "Update subscription: Failed to get URL content with user agent", e)
                     UrlContentResponse("")

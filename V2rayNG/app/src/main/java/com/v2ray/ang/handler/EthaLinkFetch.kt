@@ -78,6 +78,13 @@ object EthaLinkFetch {
         else -> "fresh"
     }
 
+    /** The signed time of an answer taken outside the race (the last resort): kept so an older one is never taken later. */
+    fun rememberSigned(signedAt: Long) {
+        if (signedAt <= 0) return
+        val held = MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_SIGNED_AT)?.toLongOrNull() ?: 0L
+        MmkvManager.encodeSettings(AppConfig.PREF_ETHA_SIGNED_AT, maxOf(held, signedAt).toString())
+    }
+
     private fun accept(o: Outcome, key: String, held: Long, networkSignature: String, aside: Boolean = false): Outcome {
         MmkvManager.encodeSettings(key, o.way)
         if (o.signedAt > 0) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_SIGNED_AT, maxOf(held, o.signedAt).toString())

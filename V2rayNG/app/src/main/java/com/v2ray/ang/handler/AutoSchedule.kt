@@ -73,25 +73,29 @@ class AutoSchedule {
         return if (ids.isEmpty()) null else Action.Probe(ids)
     }
 
-    /** The next lines of the rotation that may be probed: not the line in use, not one waiting its retry; from the cursor on, wrapping, up to [count]. */
+    /** The next lines of the rotation that may be probed: not the line in use, not one waiting its retry; from the cursor to
+     *  the end of the rotation (a step never straddles a pass boundary), up to [count]. Empty when nothing before the end may
+     *  be probed: the pass ends there ([nothingDue]). */
     fun next(count: Int, current: String?, due: (String) -> Boolean): List<String> {
-        if (order.isEmpty()) return emptyList()
         val out = ArrayList<String>()
-        for (k in order.indices) {
-            if (out.size >= count) break
-            val id = order[(cursor + k) % order.size]
+        var k = cursor
+        while (k < order.size && out.size < count) {
+            val id = order[k]
+            k += 1
             if (id == current || !due(id)) continue
             out.add(id)
         }
         return out
     }
 
-    /** [count] lines were probed now: the cursor moves past them; a wrapped rotation is a pass. Returns true at a pass end. */
-    fun probed(nowMs: Long, count: Int, policy: AutoPolicy, draw: Double): Boolean {
-        val before = cursor
-        cursor += maxOf(1, count)
+    /** [ids] (what [next] gave) were probed now: the cursor moves past them and past every line skipped on the way; a cursor
+     *  at the end of the rotation is a pass. Returns true at a pass end. */
+    fun probed(nowMs: Long, ids: List<String>, policy: AutoPolicy, draw: Double): Boolean {
+        val last = ids.lastOrNull()
+        val at = if (last == null) -1 else (cursor until order.size).firstOrNull { order[it] == last } ?: -1
+        cursor = if (at >= 0) at + 1 else cursor + maxOf(1, ids.size)
         var passEnd = false
-        if (cursor >= order.size || before >= order.size) {
+        if (cursor >= order.size) {
             cursor = 0; passes += 1; passEnd = true
             if (phase == Phase.FIRST) phase = Phase.STEADY
             forced = false
@@ -100,10 +104,13 @@ class AutoSchedule {
         return passEnd
     }
 
-    /** Nothing could be probed at this step (every other line waits its retry): the step is spent. */
+    /** Nothing before the end of the rotation may be probed (the line in use, lines waiting their retry): the pass ends here
+     *  without a probe; the next step starts the rotation again after the pace. */
     fun nothingDue(nowMs: Long, policy: AutoPolicy, draw: Double) {
-        nextProbeAt = nowMs + if (phase == Phase.FIRST) policy.firstPaceSec * 1000L else paceMs(policy, draw)
-        if (phase == Phase.FIRST) { phase = Phase.STEADY; forced = false }
+        cursor = 0; passes += 1
+        if (phase == Phase.FIRST) phase = Phase.STEADY
+        forced = false
+        nextProbeAt = nowMs + paceMs(policy, draw)
     }
 
     /** The line in use was probed now. */

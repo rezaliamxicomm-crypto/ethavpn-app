@@ -3,7 +3,6 @@ package com.v2ray.ang.handler
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
-import kotlin.random.Random
 
 class AutoDecisionTest {
     private val p = AutoPolicy()
@@ -52,20 +51,24 @@ class AutoDecisionTest {
         assertNull(d.target(s(101), AutoDecision.Phase.MANUAL, c("b", 160), listOf(c("b", 160), c("a", 150, 0)), p))      // 10 ms: under the floor
     }
 
-    /** An hour of steady state with every line's time wandering ±10 % around the same value: nobody moves. A line that
-     *  then settles 30 % below the line in use for two passes: exactly one move. The line in use dying: one failover. */
+    /** An hour of steady state with every line's time wandering ±10 % around its value, the noise flipping sign from pass to
+     *  pass (a lead that does not last): nobody moves. A line that then settles 30 % below the line in use for two passes:
+     *  exactly one move. The line in use dying: one failover, at once. */
     @Test
     fun simulationNoiseMovesNobodyARealLeadMovesOnceADeathMovesAtOnce() {
         val d = AutoDecision()
-        val rng = Random(7)
         var current = "r1"; var moves = 0
-        val base = linkedMapOf("r1" to 200L, "r2" to 205L, "x1" to 220L, "w1" to 210L)
-        val names = base.keys.toList()
+        val names = listOf("r1", "r2", "x1", "w1")
+        val base = mapOf("r1" to 200L, "r2" to 205L, "x1" to 220L, "w1" to 210L)
         for (pass in 1..20) {                                                   // an hour of passes
-            val cands = base.map { (id, ms) -> c(id, ms + rng.nextLong(-(ms / 10), ms / 10 + 1), names.indexOf(id)) }
+            val cands = names.mapIndexed { i, id ->
+                val ms = base.getValue(id)
+                val sign = if ((pass + i) % 2 == 0) 1L else -1L                 // this pass's leader is next pass's laggard
+                c(id, ms + sign * ms / 10, i)
+            }
             d.target(s(pass * 180), AutoDecision.Phase.PASS_END, cands.first { it.id == current }, cands, p)?.let { current = it; moves++ }
         }
-        assertEquals("noise of ±10 % must not move anyone", 0, moves)
+        assertEquals("noise of ±10 % that flips each pass must not move anyone", 0, moves)
         for (pass in 21..24) {                                                  // r2 settles clearly ahead
             val cands = listOf(c("r1", 200), c("r2", 140, 1), c("x1", 220, 2), c("w1", 210, 3))
             d.target(s(pass * 180), AutoDecision.Phase.PASS_END, cands.first { it.id == current }, cands, p)?.let { current = it; moves++ }

@@ -62,16 +62,17 @@ class EthaEchFetchTest {
         val json = com.v2ray.ang.util.JsonUtil.toJson(
             EthaEchFetch.buildRequest("https://fra.skyrayconfig.org/sub/0123456789abcdef", listOf("104.21.67.176"), null, EthaEchFetch.TunnelProxy("127.0.0.1:10808", "u", "p"))
         )
-        for (key in listOf("url", "addresses", "pinnedAddresses", "resolvers", "lookupName", "pinnedKey", "userAgent", "timeoutMs", "proxy", "proxyUser", "proxyPassword")) {
+        for (key in listOf("url", "addresses", "pinnedAddresses", "resolvers", "lookupName", "pinnedKey", "userAgent", "timeoutMs", "proxy", "proxyUser", "proxyPassword", "signKeys")) {
             assertTrue("missing key $key in $json", json.contains("\"$key\":"))
         }
         val back = com.v2ray.ang.util.JsonUtil.fromJsonSafe(
-            "{\"status\":200,\"headers\":{\"profile-update-interval\":\"3\"},\"body\":\"dmxlc3M6Ly8=\",\"echAccepted\":true,\"address\":\"104.21.67.176\",\"keySource\":\"retry\",\"error\":\"\"}",
+            "{\"status\":200,\"headers\":{\"profile-update-interval\":\"3\"},\"body\":\"dmxlc3M6Ly8=\",\"echAccepted\":true,\"address\":\"104.21.67.176\",\"keySource\":\"retry\",\"signed\":\"ok\",\"signedAt\":1800000000,\"error\":\"\"}",
             EchFetchResult::class.java
         )
         assertEquals(200, back!!.status)
         assertEquals("retry", back.keySource)
         assertEquals("3", back.headers!!["profile-update-interval"])
+        assertEquals("ok", back.signed); assertEquals(1_800_000_000L, back.signedAt)
         assertNotNull(EthaEchFetch.toResponse(back))
     }
 

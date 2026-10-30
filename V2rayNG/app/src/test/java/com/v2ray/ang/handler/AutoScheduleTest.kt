@@ -20,12 +20,12 @@ class AutoScheduleTest {
         assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(10.0), warm = false, watched = false, searching = false, current = "r1", due = all))   // first pass: warm or not, watched or not
         sch.currentProbed(s(10.0), p)
         assertEquals(AutoSchedule.Action.Probe(listOf("r2", "x1")), sch.action(s(10.0), warm = false, watched = false, searching = false, current = "r1", due = all))   // two at a time, the line in use skipped
-        assertFalse(sch.probed(s(10.0), 2, p, 0.5))
+        assertFalse(sch.probed(s(10.0), listOf("r2", "x1"), p, 0.5))
         assertNull(sch.action(s(10.5), warm = false, watched = false, searching = false, current = "r1", due = all))
         assertEquals(AutoSchedule.Action.Probe(listOf("x2", "w1")), sch.action(s(11.0), warm = false, watched = false, searching = false, current = "r1", due = all))   // a second a step
-        assertFalse(sch.probed(s(11.0), 2, p, 0.5))
+        assertFalse(sch.probed(s(11.0), listOf("x2", "w1"), p, 0.5))
         assertEquals(AutoSchedule.Action.Probe(listOf("w2")), sch.action(s(12.0), warm = false, watched = false, searching = false, current = "r1", due = all))   // the pass ends with w2
-        assertTrue(sch.probed(s(12.0), 1, p, 0.5))                                                                        // a pass: the first pass is over
+        assertTrue(sch.probed(s(12.0), listOf("w2"), p, 0.5))                                                                        // a pass: the first pass is over
         assertEquals(AutoSchedule.Phase.STEADY, sch.phase); assertEquals(1, sch.passes); assertFalse(sch.forced)
         assertNull(sch.action(s(13.0), warm = false, watched = false, searching = false, current = "r1", due = all))        // cold and unwatched: nothing
         assertEquals(30_000L, sch.paceMs(p, 0.5))                                                                           // 180 s over 6 lines
@@ -72,6 +72,12 @@ class AutoScheduleTest {
         assertEquals(emptyList<String>(), sch.next(1, "a") { it == "a" })
         sch.nothingDue(s(60.0), p, 0.5)
         assertEquals(120_000L, sch.nextProbeAt)
+        assertEquals(0, sch.cursor); assertEquals(1, sch.passes)                                                      // the rest held nothing: the pass ended
+        // a skipped line on the way counts as consumed: the step after [r2, x1] (r1 skipped) is [x2, w1], never x1 again
+        val r = AutoSchedule(); r.start(0, listOf("r1", "r2", "x1", "x2", "w1", "w2"))
+        assertEquals(listOf("r2", "x1"), r.next(2, "r1", all)); r.probed(0, listOf("r2", "x1"), p, 0.5)
+        assertEquals(3, r.cursor); assertEquals(listOf("x2", "w1"), r.next(2, "r1", all))
+        r.probed(s(1.0), listOf("x2", "w1"), p, 0.5); assertEquals(listOf("w2"), r.next(2, "r1", all))                // a step never straddles a pass
     }
 
     @Test
@@ -104,7 +110,9 @@ class AutoScheduleTest {
         assertEquals(AutoSchedule.Action.Probe(listOf("a", "b")), sch.action(s(50.0), warm = false, watched = false, searching = true, current = "a") { false })   // every line, the line in use too, two at a time
         sch.searchStep(s(50.0), 2)
         assertNull(sch.action(s(50.5), warm = false, watched = false, searching = true, current = "a", due = all))
-        assertEquals(AutoSchedule.Action.Probe(listOf("c", "a")), sch.action(s(51.0), warm = false, watched = false, searching = true, current = "a", due = all))
+        assertEquals(AutoSchedule.Action.Probe(listOf("c")), sch.action(s(51.0), warm = false, watched = false, searching = true, current = "a", due = all))   // to the end of the rotation…
+        sch.searchStep(s(51.0), 1)
+        assertEquals(AutoSchedule.Action.Probe(listOf("a", "b")), sch.action(s(52.0), warm = false, watched = false, searching = true, current = "a", due = all))   // …then round again
     }
 
     @Test
