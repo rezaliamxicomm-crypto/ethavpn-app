@@ -178,6 +178,8 @@ object AppConfig {
     val ETHA_SIGN_KEYS = listOf("x1P7PGU48fnmDii+oUqRq2BNEc/JKhldw2oDKIYC9RY=", "nEb0S15kOFA081vRo8SwKijoFZopS5Ot4zrHRoxqT6I=")
     const val ETHA_SIG_AT_HEADER = "x-etha-sig-at"
     const val ETHA_SIGNED_STALE_SEC = 3600L                  // an answer signed longer ago is taken only when nothing fresher comes (a hop replaying an old one)
+    const val ETHA_SIGNED_MAX_AGE_SEC = 172_800L             // an answer signed longer ago is refused outright (a hop freezing a phone on a captured answer)
+    const val ETHA_SIGNED_HELD_AHEAD_SEC = 86_400L           // the held signed time never runs further ahead of the phone's clock than this (a box clock ahead must not strand the phone)
     const val ETHA_HINT_HEADER = "x-etha-hint"               // the box's ranking of the lines on this network (Hint): advice for Auto
     const val PREF_ETHA_HINT = "pref_etha_hint"              // the last hint, kept for the next Connect
     const val PREF_ETHA_SIGNED_AT = "pref_etha_signed_at"    // the signed time of the last answer taken: an older one is never taken again

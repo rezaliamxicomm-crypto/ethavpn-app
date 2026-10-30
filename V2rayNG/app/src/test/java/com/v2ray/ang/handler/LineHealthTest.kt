@@ -46,6 +46,17 @@ class LineHealthTest {
     }
 
     @Test
+    fun nothingAnswersWhenEveryLineFailedOrWaitsItsRetry() {
+        val h = LineHealth()
+        h.failed("x1", 1, p); h.failed("x2", 1, p)                                          // in backoff: not probed this session
+        val results = mapOf("r1" to -1L, "r2" to -1L)                                       // probed and failed
+        assertTrue(h.allOut(listOf("r1", "r2", "x1", "x2"), "r1") { results[it] ?: 0L })
+        assertFalse(h.allOut(listOf("r1", "r2", "x1", "x2", "w1"), "r1") { results[it] ?: 0L })   // w1 never probed, not held failed: not out
+        assertFalse(h.allOut(listOf("r1", "r2", "x1"), "r1") { mapOf("r1" to 200L, "r2" to -1L)[it] ?: 0L })   // the line in use answers
+        assertFalse(LineHealth().allOut(emptyList(), "r1") { -1L })
+    }
+
+    @Test
     fun itSurvivesTheStore() {
         val h = LineHealth(); h.ok("REALITY-relay-FRA4-443", 100, 5); h.failed("XHTTP-api-CleanIP1-443", 6, p)
         val back = LineHealth.decode(h.encode())

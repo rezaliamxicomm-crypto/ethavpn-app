@@ -6,9 +6,11 @@ package libv2ray
 // hop inside Iran terminates TLS and proxies the answer, so a seized hop could alter it (other lines, a herding hint,
 // a phishing notice); this makes that visible. The canonical text, byte for byte the box's:
 //
-//	v1\n<at: unix seconds>\n<sha256 of the body, hex>\n<name>:<value>\n…
+//	v1\n<HTTP status>\n<sha256 of the token, hex>\n<at: unix seconds>\n<sha256 of the body, hex>\n<name>:<value>\n…
 //
-// one line per signed header present, sorted by lower-cased name: every x-etha-* header but the three signature
+// The status and the token are bound: a hop cannot turn a 200 into a trusted "expired", replay another customer's signed
+// 403, or hand one customer another's signed answer. One line per signed header present (values trimmed as HTTP parsers
+// hand them over), sorted by lower-cased name: every x-etha-* header but the three signature
 // headers, and the named ones in sigSignedHeaders. Headers: X-Etha-Sig-At (the seconds), X-Etha-Sig (base64url, no
 // padding), X-Etha-Sig-Key (the first 8 hex of sha256 of the raw public key: which pinned key to verify with).
 // One implementation for both apps (this file is the same in the Android and the iOS repository); the vectors in
@@ -19,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,9 +48,11 @@ func sigIsSignedHeader(lowerName string) bool {
 	return sigSignedHeaders[lowerName]
 }
 
-// sigCanonical is the text the box signed: the version, the time, the body's hash, the signed headers sorted.
-func sigCanonical(at int64, body []byte, headers map[string]string) string {
+// sigCanonical is the text the box signed: the version, the status, the token's hash, the time, the body's hash, the
+// signed headers sorted (their values trimmed).
+func sigCanonical(status int, token string, at int64, body []byte, headers map[string]string) string {
 	sum := sha256.Sum256(body)
+	tok := sha256.Sum256([]byte(token))
 	lower := make(map[string]string, len(headers))
 	names := make([]string, 0, len(headers))
 	for k, v := range headers {
@@ -56,12 +61,16 @@ func sigCanonical(at int64, body []byte, headers map[string]string) string {
 			if _, seen := lower[n]; !seen {
 				names = append(names, n)
 			}
-			lower[n] = v
+			lower[n] = strings.TrimSpace(v)
 		}
 	}
 	sort.Strings(names)
 	var b strings.Builder
 	b.WriteString("v1\n")
+	b.WriteString(strconv.Itoa(status))
+	b.WriteString("\n")
+	b.WriteString(hex.EncodeToString(tok[:]))
+	b.WriteString("\n")
 	b.WriteString(strconv.FormatInt(at, 10))
 	b.WriteString("\n")
 	b.WriteString(hex.EncodeToString(sum[:]))
@@ -75,16 +84,30 @@ func sigCanonical(at int64, body []byte, headers map[string]string) string {
 	return b.String()
 }
 
+// sigTokenOf is the token a subscription URL names: the last element of its path (…/sub/<token>); "" when there is none.
+func sigTokenOf(rawURL string) string {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return ""
+	}
+	p := strings.TrimRight(u.Path, "/")
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}
+
 // sigKeyID is X-Etha-Sig-Key's form of a raw public key.
 func sigKeyID(pub []byte) string {
 	s := sha256.Sum256(pub)
 	return hex.EncodeToString(s[:])[:8]
 }
 
-// sigVerify checks an answer (its headers as the result carries them, names in any case; its body) against the pinned
-// public keys (base64, raw 32 bytes each). It returns the verdict, the signed time (0 when there is none) and the id
-// of the key that verified. A key id header names the key to use; without one every pinned key is tried.
-func sigVerify(headers map[string]string, body []byte, keysB64 []string) (verdict string, at int64, keyID string) {
+// sigVerify checks an answer (its status; its headers as the result carries them, names in any case; its body; the
+// token it was fetched for) against the pinned public keys (base64, raw 32 bytes each). It returns the verdict, the
+// signed time (0 when there is none) and the id of the key that verified. A key id header names the key to use; without
+// one every pinned key is tried.
+func sigVerify(status int, token string, headers map[string]string, body []byte, keysB64 []string) (verdict string, at int64, keyID string) {
 	lower := make(map[string]string, len(headers))
 	for k, v := range headers {
 		lower[strings.ToLower(k)] = v
@@ -104,7 +127,7 @@ func sigVerify(headers map[string]string, body []byte, keysB64 []string) (verdic
 	if len(keysB64) == 0 {
 		return sigNoKeys, ts, ""
 	}
-	msg := []byte(sigCanonical(ts, body, lower))
+	msg := []byte(sigCanonical(status, token, ts, body, lower))
 	wanted := strings.ToLower(strings.TrimSpace(lower["x-etha-sig-key"]))
 	tried := false
 	for _, k := range keysB64 {

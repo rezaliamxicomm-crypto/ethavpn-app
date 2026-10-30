@@ -141,7 +141,14 @@ object CoreServiceManager {
             return
         }
 
-        val guid = MmkvManager.getSelectServer()
+        // A refetch renews the lines' ids; a selection pointing at an id that is gone (Auto's last move before a restart on
+        // the new lines) starts the first line that exists instead of failing with "config invalid" and leaving the VPN down.
+        val selected = MmkvManager.getSelectServer()
+        val guid = selected?.takeIf { MmkvManager.decodeServerConfig(it) != null }
+            ?: MmkvManager.decodeServerList().firstOrNull { MmkvManager.decodeServerConfig(it) != null }?.also {
+                LogUtil.w(AppConfig.TAG, "StartCore-Manager: the selected profile is gone (the lines were renewed); starting on the first")
+                MmkvManager.setSelectServer(it)
+            }
             ?: run {
                 LogUtil.e(AppConfig.TAG, "StartCore-Manager: No server selected")
                 error(context.getString(R.string.app_tile_first_use))
@@ -564,7 +571,7 @@ object CoreServiceManager {
                 }
 
                 AppConfig.MSG_ETHA_WATCH -> {
-                    auto?.noteWatched()   // the Home screen is showing the chip: the line in use is kept fresh for it
+                    auto?.noteWatched()   // the Home screen is showing the chip: the line in use is kept fresh for it, and the state is said again
                 }
             }
 

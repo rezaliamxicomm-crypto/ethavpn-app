@@ -49,6 +49,14 @@ class LineHealth {
         return (good + unseen + dead).map { it.value }
     }
 
+    /** Nothing answers: every line is either held as failed here or failed its last probe this session ([result] -1), and the
+     *  line in use is among the failed. The moment Searching begins — a line waiting its retry counts as out, so backoff can
+     *  never hide a dead network behind "not probed yet". */
+    fun allOut(labels: List<String>, current: String, result: (String) -> Long): Boolean {
+        if (labels.isEmpty() || result(current) >= 0) return false
+        return labels.all { result(it) < 0 || isDead(it) }
+    }
+
     /** The best line known good right now, other than [except]; null when none is known good. */
     fun bestKnown(lines: List<String>, except: String? = null): String? =
         bestFirst(lines).firstOrNull { it != except && !isDead(it) && lastMs(it) != null }

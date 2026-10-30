@@ -30,7 +30,12 @@ class AutoScheduleTest {
         assertNull(sch.action(s(13.0), warm = false, watched = false, searching = false, current = "r1", due = all))        // cold and unwatched: nothing
         assertEquals(30_000L, sch.paceMs(p, 0.5))                                                                           // 180 s over 6 lines
         assertNull(sch.action(s(41.0), warm = true, watched = false, searching = false, current = "r1", due = all))
-        assertEquals(AutoSchedule.Action.Probe(listOf("r2")), sch.action(s(42.0), warm = true, watched = false, searching = false, current = "r1", due = all))   // one at a time from here
+        assertEquals(AutoSchedule.Action.Probe(listOf("r1")), sch.action(s(42.0), warm = true, watched = false, searching = false, current = "r1", due = all))   // one at a time from here, the line in use among them
+        sch.probed(s(42.0), listOf("r1"), p, 0.5)
+        assertEquals(AutoSchedule.Action.Probe(listOf("r2")), sch.action(s(72.0), warm = true, watched = false, searching = false, current = "r1", due = all))
+        // the pace spreads the round over the lines that can be probed, not over lines waiting their retry
+        sch.probed(s(72.0), listOf("r2"), p, 0.5, active = 2)
+        assertEquals(s(72.0) + 90_000L, sch.nextProbeAt)                                                                  // 180 s over 2 live lines
     }
 
     @Test
@@ -39,8 +44,8 @@ class AutoScheduleTest {
         assertNull(sch.action(s(60.0), warm = false, watched = false, searching = false, current = "r1", due = all))          // cold and unwatched: the phone sleeps
         assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(60.0), warm = false, watched = true, searching = false, current = "r1", due = all))   // on screen: the line in use first
         sch.currentProbed(s(60.0), p)
-        assertEquals(AutoSchedule.Action.Probe(listOf("r2")), sch.action(s(60.0), warm = false, watched = true, searching = false, current = "r1", due = all))   // …then the step
-        assertEquals(AutoSchedule.Action.Probe(listOf("r2")), sch.action(s(60.0), warm = true, watched = false, searching = false, current = "r1", due = all))   // traffic flowing: the step, no current
+        assertEquals(AutoSchedule.Action.Probe(listOf("r1")), sch.action(s(60.0), warm = false, watched = true, searching = false, current = "r1", due = all))   // …then the step (steady: the line in use is in the rotation)
+        assertEquals(AutoSchedule.Action.Probe(listOf("r1")), sch.action(s(60.0), warm = true, watched = false, searching = false, current = "r1", due = all))   // traffic flowing: the step, no extra current probe
         val f = AutoSchedule(); f.start(0, lines)
         assertEquals(AutoSchedule.Action.ProbeCurrent, f.action(0, warm = false, watched = false, searching = false, current = "r1", due = all))   // the first pass asks nobody
     }
@@ -50,9 +55,9 @@ class AutoScheduleTest {
         val sch = AutoSchedule(); sch.reseed(0, lines, p, 0.5)
         assertNull(sch.action(s(29.0), warm = true, watched = true, searching = false, current = "r1", due = all))
         assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(30.0), warm = true, watched = true, searching = false, current = "r1", due = all))
-        assertEquals(AutoSchedule.Action.Probe(listOf("r2")), sch.action(s(30.0), warm = true, watched = false, searching = false, current = "r1", due = all))   // not watched: the trickle only
+        assertEquals(AutoSchedule.Action.Probe(listOf("r1")), sch.action(s(30.0), warm = true, watched = false, searching = false, current = "r1", due = all))   // not watched: the trickle only
         sch.currentProbed(s(30.0), p)
-        assertEquals(AutoSchedule.Action.Probe(listOf("r2")), sch.action(s(30.0), warm = true, watched = true, searching = false, current = "r1", due = all))    // both due: the current came first, the step follows
+        assertEquals(AutoSchedule.Action.Probe(listOf("r1")), sch.action(s(30.0), warm = true, watched = true, searching = false, current = "r1", due = all))    // both due: the current came first, the step follows
     }
 
     @Test
@@ -85,7 +90,10 @@ class AutoScheduleTest {
         val sch = AutoSchedule(); sch.reseed(0, lines, p, 0.5)
         assertNull(sch.action(s(600.0), warm = false, watched = false, searching = false, current = "r1", due = all))
         sch.wake(s(600.0))
-        assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(600.0), warm = true, watched = false, searching = false, current = "r1", due = all))   // forced: even unwatched
+        assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(600.0), warm = false, watched = false, searching = false, current = "r1", due = all))   // one probe of the line in use, watched or not
+        sch.currentProbed(s(600.0), p)
+        assertNull(sch.action(s(601.0), warm = false, watched = false, searching = false, current = "r1", due = all))                 // then the trickle waits for the radio or the screen: no forced pass
+        assertFalse(sch.forced)
         val fresh = AutoSchedule(); fresh.wake(s(5.0))
         assertNull(fresh.action(s(5.0), warm = true, watched = true, searching = false, current = "r1", due = all))        // before Connect: nothing to wake
     }
@@ -108,11 +116,15 @@ class AutoScheduleTest {
         val sch = AutoSchedule(); sch.reseed(0, listOf("a", "b", "c"), p, 0.5)
         sch.searchingBegan(s(50.0))
         assertEquals(AutoSchedule.Action.Probe(listOf("a", "b")), sch.action(s(50.0), warm = false, watched = false, searching = true, current = "a") { false })   // every line, the line in use too, two at a time
-        sch.searchStep(s(50.0), 2)
-        assertNull(sch.action(s(50.5), warm = false, watched = false, searching = true, current = "a", due = all))
-        assertEquals(AutoSchedule.Action.Probe(listOf("c")), sch.action(s(51.0), warm = false, watched = false, searching = true, current = "a", due = all))   // to the end of the rotation…
-        sch.searchStep(s(51.0), 1)
-        assertEquals(AutoSchedule.Action.Probe(listOf("a", "b")), sch.action(s(52.0), warm = false, watched = false, searching = true, current = "a", due = all))   // …then round again
+        sch.searchStep(s(50.0), 2, p)
+        assertNull(sch.action(s(79.0), warm = false, watched = false, searching = true, current = "a", due = all))                   // paced: 3 lines, two a step → a step every 30 s, each line once a minute
+        assertEquals(AutoSchedule.Action.Probe(listOf("c")), sch.action(s(80.0), warm = false, watched = false, searching = true, current = "a", due = all))   // to the end of the rotation…
+        sch.searchStep(s(80.0), 1, p, slow = true)                                                                                  // the box says the network blocks every line: three times slower
+        assertNull(sch.action(s(169.0), warm = false, watched = false, searching = true, current = "a", due = all))
+        assertEquals(AutoSchedule.Action.Probe(listOf("a", "b")), sch.action(s(170.0), warm = false, watched = false, searching = true, current = "a", due = all))   // …then round again
+        sch.searchStep(s(170.0), 2, p)
+        assertNull(sch.action(s(700.0), warm = false, watched = false, searching = true, current = "a", due = all))                  // ten minutes in: only warm or watched
+        assertEquals(AutoSchedule.Action.Probe(listOf("c")), sch.action(s(700.0), warm = true, watched = false, searching = true, current = "a", due = all))
     }
 
     @Test

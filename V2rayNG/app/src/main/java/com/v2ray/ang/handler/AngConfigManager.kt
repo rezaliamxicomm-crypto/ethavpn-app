@@ -575,7 +575,10 @@ object AngConfigManager {
             var response = if (ours) {
                 val outcome = EthaLinkFetch.fetch(url, it.guid, userAgent, extraHeaders, EthaNetwork.signature(AngApplication.application))
                 answered = outcome.answered
-                if (answered && report.isNotEmpty()) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, "")
+                // the report is spent only when the box could file it under this phone's network: a fetch that won through the
+                // tunnel reaches the box from its own address and is filed as "through the tunnel" (ignored for the ranking) —
+                // and only when it is still the same report (Auto may have written a newer one meanwhile)
+                if (answered && report.isNotEmpty() && outcome.way != "tunnel" && MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_LINE_REPORT) == report) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, "")
                 outcome.response ?: UrlContentResponse("")
             } else try {
                 val httpPort = SettingsManager.getHttpPort()
@@ -600,9 +603,10 @@ object AngConfigManager {
                     LogUtil.w(AppConfig.TAG, "ECH and the hop got no answer: fetching the link by name without ECH, the last resort")
                     val r = EthaEchFetch.call(EthaEchFetch.buildPlainRequest(url, userAgent, extraHeaders), "by name without ECH")
                     val held = MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_SIGNED_AT)?.toLongOrNull() ?: 0L
-                    val taken = EthaHopFetch.answered(r) && EthaLinkFetch.replayVerdict(r!!.signedAt, held, System.currentTimeMillis() / 1000) != "older"
+                    val verdict = if (EthaHopFetch.answered(r)) EthaLinkFetch.replayVerdict(r!!.signedAt, held, System.currentTimeMillis() / 1000) else "none"
+                    val taken = verdict == "fresh" || verdict == "stale"
                     if (taken) {
-                        if (report.isNotEmpty()) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, "")
+                        if (report.isNotEmpty() && MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_LINE_REPORT) == report) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, "")
                         EthaLinkFetch.rememberSigned(r!!.signedAt)
                         LogUtil.i(AppConfig.TAG, "Subscription answered by name without ECH (the last resort), status ${r.status}")
                         EthaHopFetch.toResponse(r) ?: UrlContentResponse("")

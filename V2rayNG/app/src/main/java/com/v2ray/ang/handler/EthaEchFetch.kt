@@ -37,7 +37,7 @@ object EthaEchFetch {
     data class TunnelProxy(val address: String, val user: String? = null, val password: String? = null)
 
     /** What a fetch came to: the subscription, when there is one, whether the server answered at all (any status), and when the box signed the answer (0 unsigned). */
-    data class Outcome(val response: UrlContentResponse?, val answered: Boolean, val signedAt: Long = 0L)
+    data class Outcome(val response: UrlContentResponse?, val answered: Boolean, val signedAt: Long = 0L, val status: Int = 0, val signed: Boolean = false)
 
     /**
      * `url` fetched with ECH, on the phone's network and then through the tunnel. `response` is the body and headers
@@ -46,10 +46,10 @@ object EthaEchFetch {
     fun fetch(url: String, subscriptionId: String?, userAgent: String?, headers: Map<String, String> = emptyMap()): Outcome {
         val stored = storedAddresses(subscriptionId)
         val direct = call(buildRequest(url, stored, userAgent, headers = headers), "on the phone's network")
-        if (answered(direct)) return Outcome(toResponse(direct), true, direct?.signedAt ?: 0L)   // the server answered, whatever it said: through the tunnel it says the same
+        if (answered(direct)) return Outcome(toResponse(direct), true, direct?.signedAt ?: 0L, direct?.status ?: 0, signedWord(direct))   // the server answered, whatever it said: through the tunnel it says the same
         val proxy = TunnelProxy("127.0.0.1:${SettingsManager.getHttpPort()}", SettingsManager.getSocksUsername(), SettingsManager.getSocksPassword())
         val tunnel = call(buildRequest(url, stored, userAgent, proxy, headers), "through the tunnel")
-        return Outcome(toResponse(tunnel), answered(tunnel), tunnel?.signedAt ?: 0L)
+        return Outcome(toResponse(tunnel), answered(tunnel), tunnel?.signedAt ?: 0L, tunnel?.status ?: 0, signedWord(tunnel))
     }
 
     internal fun call(request: EchFetchRequest, way: String): EchFetchResult? {
@@ -91,6 +91,14 @@ object EthaEchFetch {
     /** Pure: signed longer ago than ETHA_SIGNED_STALE_SEC — taken only when no fresher answer arrives (a hop replaying an old one). */
     fun stale(result: EchFetchResult?, nowSec: Long = System.currentTimeMillis() / 1000): Boolean =
         result != null && result.signedAt > 0 && nowSec - result.signedAt > AppConfig.ETHA_SIGNED_STALE_SEC
+
+    /** Pure: the box's own word — a subscription (200) or an expiry (403) with the signature on it. Only this ends the fetch
+     *  race; any other status is kept aside and shown only when nothing signed arrives (a hop answering 404 fast must not win). */
+    fun signedWord(result: EchFetchResult?): Boolean =
+        result != null && result.error.isNullOrEmpty() && (result.status == 200 || result.status == 403) && trusted(result)
+
+    /** Pure: the signed time to hold, never more than ETHA_SIGNED_HELD_AHEAD_SEC past the phone's clock. */
+    fun heldSignedAt(signedAt: Long, nowSec: Long = System.currentTimeMillis() / 1000): Long = minOf(signedAt, nowSec + AppConfig.ETHA_SIGNED_HELD_AHEAD_SEC)
 
     /** Pure: the request the core gets — for the phone's own network, or with [proxy] for the way through the tunnel. */
     fun buildRequest(url: String, stored: List<String>, userAgent: String?, proxy: TunnelProxy? = null, headers: Map<String, String> = emptyMap()): EchFetchRequest = EchFetchRequest(

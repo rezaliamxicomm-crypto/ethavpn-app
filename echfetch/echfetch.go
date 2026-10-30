@@ -115,7 +115,7 @@ func FetchSubscriptionEch(requestJSON string) string {
 	}
 	res := fetchSubscriptionEch(req)
 	if res.Error == "" && res.Status > 0 {
-		res.Signed, res.SignedAt, res.SignKeyID = sigVerify(res.Headers, []byte(res.Body), req.SignKeys)
+		res.Signed, res.SignedAt, res.SignKeyID = sigVerify(res.Status, sigTokenOf(req.URL), res.Headers, []byte(res.Body), req.SignKeys)
 	}
 	return marshalEchResult(res)
 }

@@ -1,7 +1,10 @@
 package com.v2ray.ang.handler
 
+import com.v2ray.ang.dto.EchFetchResult
 import com.v2ray.ang.AppConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EthaLinkFetchTest {
@@ -30,5 +33,12 @@ class EthaLinkFetchTest {
         assertEquals("stale", EthaLinkFetch.replayVerdict(signedAt = now - 3601, held = 0, nowSec = now))             // an hour old
         assertEquals("fresh", EthaLinkFetch.replayVerdict(signedAt = now - 3600, held = 0, nowSec = now))
         assertEquals("older", EthaLinkFetch.replayVerdict(signedAt = now - 7200, held = now - 100, nowSec = now))     // older beats stale
+        assertEquals("refused", EthaLinkFetch.replayVerdict(signedAt = now - 172_801, held = 0, nowSec = now))        // two days: never taken
+        assertEquals("stale", EthaLinkFetch.replayVerdict(signedAt = now - 172_800, held = 0, nowSec = now))
+        assertEquals(now + 86_400, EthaEchFetch.heldSignedAt(now + 999_999, nowSec = now))                            // a box clock ahead is clamped
+        assertEquals(now - 5, EthaEchFetch.heldSignedAt(now - 5, nowSec = now))
+        assertTrue(EthaEchFetch.signedWord(EchFetchResult(status = 403, echAccepted = true, signed = "ok")))
+        assertFalse(EthaEchFetch.signedWord(EchFetchResult(status = 404, echAccepted = true)))                        // a 404 is no word of the box's: kept aside in the race
+        assertFalse(EthaEchFetch.signedWord(EchFetchResult(status = 200, body = "x", echAccepted = true, signed = "bad")))
     }
 }

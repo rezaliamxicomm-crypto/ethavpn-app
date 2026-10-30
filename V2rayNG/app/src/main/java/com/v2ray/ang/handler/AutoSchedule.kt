@@ -34,6 +34,9 @@ class AutoSchedule {
     var forced = false
     var lastNetworkAt: Long? = null
     var fallback = false
+    /** traffic returned after the idle gap: one probe of the line in use, watched or not, then the trickle under its gate */
+    var wakeDue = false
+    var searchingSince: Long? = null
 
     /** Connect: the rotation in the order the health memory suggests, the line in use probed first, then the quick pass. */
     fun start(nowMs: Long, order: List<String>) {
@@ -54,22 +57,28 @@ class AutoSchedule {
     /**
      * What the tick should do now. [warm]: bytes moved within warmSec (the radio is up anyway: a probe costs no wake-up);
      * [watched]: the app asked for the status in the last seconds (the chip is on screen); [due]: whether a line may be
-     * probed now (LineHealth). A steady step fires only warm or watched — otherwise the phone sleeps —; the first pass,
-     * a network change and a wake are forced. Searching: every line, two at a time, a step a second, nothing else.
+     * probed now (LineHealth). A steady step fires only warm or watched — otherwise the phone sleeps —; the first pass and
+     * a network change are forced; traffic returning after the idle gap gets one probe of the line in use. Searching: every
+     * line in turn, two at a time, at its own pace ([searchStep]), freely for SEARCH_GATE_AFTER_MS and then only warm or
+     * watched. In the first pass the line in use is left out (it was probed first); in steady state it is in the rotation
+     * like any line, once per pass.
      */
     fun action(nowMs: Long, warm: Boolean, watched: Boolean, searching: Boolean, current: String, due: (String) -> Boolean): Action? {
         if (searching) {
+            val since = searchingSince
+            if (since != null && nowMs - since > SEARCH_GATE_AFTER_MS && !(warm || watched)) return null
             val n = nextProbeAt ?: return null
             if (nowMs < n) return null
             val ids = next(2, null) { true }
             return if (ids.isEmpty()) null else Action.Probe(ids)
         }
-        if (!(warm || watched || forced || phase == Phase.FIRST)) return null
         val c = currentDueAt
+        if (wakeDue && c != null && nowMs >= c) return Action.ProbeCurrent
+        if (!(warm || watched || forced || phase == Phase.FIRST)) return null
         if (c != null && nowMs >= c && (watched || forced)) return Action.ProbeCurrent
         val n = nextProbeAt ?: return null
         if (nowMs < n) return null
-        val ids = next(if (phase == Phase.FIRST) 2 else 1, current, due)
+        val ids = next(if (phase == Phase.FIRST) 2 else 1, if (phase == Phase.FIRST) current else null, due)
         return if (ids.isEmpty()) null else Action.Probe(ids)
     }
 
@@ -89,8 +98,9 @@ class AutoSchedule {
     }
 
     /** [ids] (what [next] gave) were probed now: the cursor moves past them and past every line skipped on the way; a cursor
-     *  at the end of the rotation is a pass. Returns true at a pass end. */
-    fun probed(nowMs: Long, ids: List<String>, policy: AutoPolicy, draw: Double): Boolean {
+     *  at the end of the rotation is a pass. Returns true at a pass end. [active]: how many lines the rotation has to probe
+     *  right now (the pace spreads roundSec over them, not over lines waiting their retry). */
+    fun probed(nowMs: Long, ids: List<String>, policy: AutoPolicy, draw: Double, active: Int? = null): Boolean {
         val last = ids.lastOrNull()
         val at = if (last == null) -1 else (cursor until order.size).firstOrNull { order[it] == last } ?: -1
         cursor = if (at >= 0) at + 1 else cursor + maxOf(1, ids.size)
@@ -100,35 +110,39 @@ class AutoSchedule {
             if (phase == Phase.FIRST) phase = Phase.STEADY
             forced = false
         }
-        nextProbeAt = nowMs + if (phase == Phase.FIRST) policy.firstPaceSec * 1000L else paceMs(policy, draw)
+        nextProbeAt = nowMs + if (phase == Phase.FIRST) policy.firstPaceSec * 1000L else paceMs(policy, draw, active)
         return passEnd
     }
 
     /** Nothing before the end of the rotation may be probed (the line in use, lines waiting their retry): the pass ends here
      *  without a probe; the next step starts the rotation again after the pace. */
-    fun nothingDue(nowMs: Long, policy: AutoPolicy, draw: Double) {
+    fun nothingDue(nowMs: Long, policy: AutoPolicy, draw: Double, active: Int? = null) {
         cursor = 0; passes += 1
         if (phase == Phase.FIRST) phase = Phase.STEADY
         forced = false
-        nextProbeAt = nowMs + paceMs(policy, draw)
+        nextProbeAt = nowMs + paceMs(policy, draw, active)
     }
 
     /** The line in use was probed now. */
     fun currentProbed(nowMs: Long, policy: AutoPolicy) {
         currentDueAt = nowMs + policy.currentMs
+        wakeDue = false
     }
 
-    /** Searching begins: the fast trickle over every line, a step a second; ends: [reseed]/[start] as the engine decides. */
+    /** Searching begins: every line in turn, two at a time, the first step now; ends: [reseed]/[start] as the engine decides. */
     fun searchingBegan(nowMs: Long) {
         cursor = 0; phase = Phase.STEADY
         nextProbeAt = nowMs
         currentDueAt = null
+        searchingSince = nowMs
     }
 
-    /** Searching: one step taken. */
-    fun searchStep(nowMs: Long, count: Int) {
+    /** Searching: one step taken; the rotation wraps without end, each line once per searchSec (two lines a step), three
+     *  times slower when the box says the network blocks every line ([slow]). */
+    fun searchStep(nowMs: Long, count: Int, policy: AutoPolicy, slow: Boolean = false) {
         cursor = (cursor + maxOf(1, count)) % maxOf(1, order.size)
-        nextProbeAt = nowMs + 1000L
+        val steps = maxOf(1, (order.size + 1) / 2)
+        nextProbeAt = nowMs + maxOf(1000L, policy.searchMs / steps) * (if (slow) 3 else 1)
     }
 
     /** Wi-Fi ↔ mobile (or the path back after a gap): the trickle restarts in [settleMs] as a quick first pass, in use or
@@ -141,22 +155,27 @@ class AutoSchedule {
         currentDueAt = nowMs + settleMs
     }
 
-    /** Traffic returned after the idle gap: the line in use is probed now and the trickle resumes at once. */
+    /** Traffic returned after the idle gap: one probe of the line in use now, watched or not; the trickle itself resumes
+     *  under its gate (warm or watched), never a forced pass. */
     fun wake(nowMs: Long) {
         if (nextProbeAt == null) return
-        forced = true
-        nextProbeAt = nowMs
+        wakeDue = true
         currentDueAt = nowMs
     }
 
-    /** The steady pace: roundSec spread over the lines of the rotation, give or take jitterPct ([draw] in 0 ..< 1). */
-    fun paceMs(policy: AutoPolicy, draw: Double): Long {
-        val base = policy.roundMs.toDouble() / maxOf(1, order.size)
+    /** The steady pace: roundSec spread over the lines the rotation has to probe ([active], else every line), give or take
+     *  jitterPct ([draw] in 0 ..< 1). */
+    fun paceMs(policy: AutoPolicy, draw: Double, active: Int? = null): Long {
+        val n = if (active != null && active > 0) active else order.size
+        val base = policy.roundMs.toDouble() / maxOf(1, n)
         val share = policy.jitterPct / 100.0 * (2 * draw.coerceIn(0.0, 1.0) - 1)
         return (base * (1 + share)).toLong()
     }
 
     companion object {
+        /** Searching probes freely for this long; after it only while the radio is warm or the app on screen */
+        const val SEARCH_GATE_AFTER_MS = 600_000L
+
         /** The probe target after a measurement: on the target, nothing from it and something from the fallback moves the
          *  next probes to the fallback; on the fallback, the scout probe sent to the target decides. */
         fun nextFallback(current: Boolean, targetAnswered: Boolean, fallbackAnswered: Boolean): Boolean =
