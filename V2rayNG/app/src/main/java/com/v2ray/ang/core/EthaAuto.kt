@@ -73,6 +73,7 @@ class EthaAuto(
     private val samples = ArrayDeque<Triple<Long, Long, Long>>()  // time, bytes up, bytes down
     @Volatile private var lastTrafficAt = now()
     @Volatile private var lastRoundAt = 0L
+    @Volatile private var roundIntervalMs = policy.roundMs   // this round's interval: roundSec with the jitter, drawn when a round ends
     @Volatile private var lastStallProbeAt = 0L
     @Volatile private var searching = false
     @Volatile private var lastSearchFetchAt = 0L
@@ -84,6 +85,7 @@ class EthaAuto(
         LogUtil.i(AppConfig.TAG, "Auto: ${lines.size} lines behind the balancer, starting on ${nameOf(current)}; $policy")
         scope.launch {
             race(reason = "connect", userAsked = false)
+            scheduleSettle()
             while (isActive) {
                 delay(TICK_MS)
                 try { tick() } catch (e: Exception) { LogUtil.e(AppConfig.TAG, "Auto: tick failed", e) }
@@ -106,7 +108,32 @@ class EthaAuto(
         scope.launch {
             delay(NETWORK_SETTLE_MS)
             race(reason = "network", userAsked = false)
+            scheduleSettle()
         }
+    }
+
+    /**
+     * The first race measures every line at once on a core a second old and reads high: a settling round with the
+     * normal concurrency, settleSec later, corrects the pick within seconds instead of at the next round.
+     */
+    private fun scheduleSettle() {
+        if (policy.settleSec <= 0) return
+        scope.launch {
+            delay(policy.settleSec * 1000L)
+            if (searching) return@launch
+            LogUtil.i(AppConfig.TAG, "Auto: the settling round")
+            measure(lines, policy.concurrency)
+            markRound()
+            val moved = decide(reason = "settle", notify = true)
+            report("settle", moved)
+            updateSearching()
+        }
+    }
+
+    /** A round ended now; the next one comes after roundSec give or take the jitter. */
+    private fun markRound() {
+        lastRoundAt = now()
+        roundIntervalMs = policy.jitteredRoundMs(Math.random())
     }
 
     /** New connections take the line now; what is open stays where it is. */
@@ -143,7 +170,7 @@ class EthaAuto(
             return
         }
         val inUse = now - lastTrafficAt < policy.idleMs
-        if (inUse && now - lastRoundAt >= policy.roundMs) round()
+        if (inUse && now - lastRoundAt >= roundIntervalMs) round()
     }
 
     private fun sampleTraffic(now: Long) {
@@ -166,16 +193,17 @@ class EthaAuto(
         if ((r[line.guid] ?: -1L) > 0) return
         LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(current)} did not answer after a stall")
         measure(lines.filter { it.guid != current }, concurrency = lines.size)
-        lastRoundAt = now()
+        markRound()
         val moved = decide(reason = "stall", notify = true)
         report("stall", moved)
         updateSearching()
     }
 
     private suspend fun round() {
-        lastRoundAt = now()
+        val interval = roundIntervalMs
+        markRound()
         val now = now()
-        val due = if (searching) lines else lines.filter { policy.due(now, probedAt[it.guid] ?: 0L, (results[it.guid] ?: 0L) < 0) }
+        val due = if (searching) lines else lines.filter { policy.due(now, probedAt[it.guid] ?: 0L, (results[it.guid] ?: 0L) < 0, interval) }
         if (due.isEmpty()) return
         measure(due, policy.concurrency)
         val moved = decide(reason = "round", notify = true)
@@ -185,7 +213,7 @@ class EthaAuto(
 
     private suspend fun race(reason: String, userAsked: Boolean) {
         measure(lines, concurrency = lines.size)
-        lastRoundAt = now()
+        markRound()
         val moved = decide(reason, notify = !userAsked)
         report(reason, moved)
         updateSearching()

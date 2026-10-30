@@ -33,6 +33,11 @@ data class AutoPolicy(
     val searchSec: Int = 60,
     /** …and the subscription fetched again this often, for lines the box may have replaced */
     val searchFetchSec: Int = 300,
+    /** a settling round this long after the first race of a connection (0 = none): the race measures every line at
+     *  once on a core a second old and reads high, so the first pick can be a poor one for a whole round (2026-10-30) */
+    val settleSec: Int = 10,
+    /** each round's interval is roundSec give or take this share, drawn anew every round, so the bursts are not periodic */
+    val jitterPct: Int = 20,
 ) {
     val roundMs: Long get() = roundSec * 1000L
     val idleMs: Long get() = idleSec * 1000L
@@ -82,8 +87,15 @@ data class AutoPolicy(
     }
 
     /** Is a line due for a probe in this round? Failed lines wait failedRetrySec, the rest roundSec. */
-    fun due(nowMs: Long, probedAtMs: Long, failed: Boolean): Boolean =
-        nowMs - probedAtMs >= (if (failed) failedRetrySec else roundSec) * 1000L
+    fun due(nowMs: Long, probedAtMs: Long, failed: Boolean, roundIntervalMs: Long = roundSec * 1000L): Boolean =
+        nowMs - probedAtMs >= (if (failed) failedRetrySec * 1000L else roundIntervalMs)
+
+    /** The next round's interval: roundSec moved by up to jitterPct either way, `r` a draw in 0 ..< 1 (handed in so the
+     *  rule is testable): 0 → the shortest, 0.5 → roundSec, 1 → the longest. */
+    fun jitteredRoundMs(r: Double): Long {
+        val share = jitterPct / 100.0 * (2 * r.coerceIn(0.0, 1.0) - 1)
+        return (roundSec * 1000L * (1 + share)).toLong()
+    }
 
     companion object {
         const val STALL_MIN_UP_BYTES = 2048L
@@ -112,6 +124,8 @@ data class AutoPolicy(
                     "fresh" -> p = p.copy(freshSec = v.coerceIn(0, 86400))
                     "search" -> p = p.copy(searchSec = v.coerceIn(15, 600))
                     "sfetch" -> p = p.copy(searchFetchSec = v.coerceIn(60, 3600))
+                    "settle" -> p = p.copy(settleSec = v.coerceIn(0, 120))
+                    "jitter" -> p = p.copy(jitterPct = v.coerceIn(0, 50))
                 }
             }
             return p

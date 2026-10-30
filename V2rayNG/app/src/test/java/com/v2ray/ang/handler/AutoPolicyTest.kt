@@ -88,4 +88,23 @@ class AutoPolicyTest {
         assertEquals(15, clamped.searchSec)
         assertEquals(3600, clamped.searchFetchSec)
     }
+
+    @Test
+    fun theSettlingRoundAndTheJitterComeFromTheHeaderToo() {
+        assertEquals(10, AutoPolicy().settleSec)
+        assertEquals(20, AutoPolicy().jitterPct)
+        val q = AutoPolicy.parse("settle=0,jitter=50")
+        assertEquals(0, q.settleSec); assertEquals(50, q.jitterPct)
+        val clamped = AutoPolicy.parse("settle=999,jitter=99")
+        assertEquals(120, clamped.settleSec); assertEquals(50, clamped.jitterPct)
+        val p = AutoPolicy()
+        assertEquals(180_000L, p.jitteredRoundMs(0.5))
+        assertEquals(144_000L, p.jitteredRoundMs(0.0))
+        assertEquals(216_000L, p.jitteredRoundMs(1.0))
+        assertEquals(180_000L, AutoPolicy.parse("jitter=0").jitteredRoundMs(0.9))
+        val now = 1_000_000_000L; val at = now - 150_000L
+        assertTrue(!p.due(now, at, false))                              // 150 s < 180
+        assertTrue(p.due(now, at, false, 144_000L))                      // the shortened round this time
+        assertTrue(!p.due(now, at, true, 144_000L))                      // a failed line still waits its 900 s
+    }
 }
