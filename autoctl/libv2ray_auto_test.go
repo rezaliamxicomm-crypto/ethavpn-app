@@ -1,6 +1,8 @@
 package libv2ray
 
 import (
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -50,17 +52,32 @@ func TestMeasureOutboundsInTellsALiveLineFromADeadOne(t *testing.T) {
 	}
 }
 
-// Phase two does not wait for a line that cannot connect: with one blackhole among live lines and a 3-second window,
-// the live lines' warm reads are in well before the window ends, and the whole call ends with the blackhole's timeout.
+// Phase two does not wait for a line that cannot connect: with one line that hangs (every connection sent to a listener
+// that never answers) beside a live one and a 3-second window, the live line's warm read is in by the 2.5-second grace,
+// and the whole call ends with the hanging line's timeout, not before and not long after.
 func TestMeasureOutboundsDoesNotHoldTheLiveLinesForADeadOne(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	defer srv.Close()
+	tarpit, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tarpit.Close()
+	go func() { // accepts and holds every connection, answering nothing
+		for {
+			c, err := tarpit.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) { defer c.Close(); _, _ = io.Copy(io.Discard, c) }(c)
+		}
+	}()
 	config := `{
 	  "log": {"loglevel": "warning"},
 	  "inbounds": [{"tag": "socks", "protocol": "socks", "listen": "127.0.0.1", "port": 0}],
 	  "outbounds": [
 	    {"tag": "line-a", "protocol": "freedom"},
-	    {"tag": "line-b", "protocol": "blackhole"}
+	    {"tag": "line-b", "protocol": "freedom", "settings": {"redirect": "` + tarpit.Addr().String() + `"}}
 	  ]
 	}`
 	start := time.Now()
