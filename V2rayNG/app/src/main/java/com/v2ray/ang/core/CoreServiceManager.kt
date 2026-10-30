@@ -145,7 +145,7 @@ object CoreServiceManager {
         // the new lines) starts the first line that exists instead of failing with "config invalid" and leaving the VPN down.
         val selected = MmkvManager.getSelectServer()
         val guid = selected?.takeIf { MmkvManager.decodeServerConfig(it) != null }
-            ?: MmkvManager.decodeServerList().firstOrNull { MmkvManager.decodeServerConfig(it) != null }?.also {
+            ?: MmkvManager.decodeAllServerList().firstOrNull { MmkvManager.decodeServerConfig(it) != null }?.also {
                 LogUtil.w(AppConfig.TAG, "StartCore-Manager: the selected profile is gone (the lines were renewed); starting on the first")
                 MmkvManager.setSelectServer(it)
             }
