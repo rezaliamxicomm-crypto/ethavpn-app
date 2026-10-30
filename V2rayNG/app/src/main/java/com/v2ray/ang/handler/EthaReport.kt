@@ -4,10 +4,11 @@ package com.v2ray.ang.handler
  * What Auto measured, for the box: the header X-Etha-Lines on the next subscription fetch (the API stores it as one
  * row of line_reports; the panel shows it — the customer sees no line name). Pure; covered by JVM unit tests.
  *
- *     v=1;t=<epoch s>;trig=<connect|first|auto|failover|manual|network|search>;use=<label>;sw=<0|1>;r=<kbps>;l=<label>:<ms>,<label>:-1,…
+ *     v=1;t=<epoch s>;trig=<connect|first|auto|failover|manual|network|search>;use=<label>;sw=<0|1>;r=<kbps>;l=<label>:<ms>,<label>:-1,…;c=<label>:<ms>,…
  *
  * `r` (2.1): the best five-second download rate seen on the line in use during the pass, in kbps, when any (the passive
- * throughput figure for the box's ranking; a latency probe cannot see a slow line).
+ * throughput figure for the box's ranking; a latency probe cannot see a slow line). `c` (2.1.1): the connect time of each
+ * line that was measured — its first request, handshakes and all — beside `l`'s warm round trip; only lines with one.
  *
  * A label is the line's name without its "EthaVPN-" prefix (REALITY-relay-FRA9-443, XHTTP-api-CleanIP1-443); a line
  * named otherwise is left out. ms -1 = no answer. The header stays under 4 KB (at most 64 lines).
@@ -29,15 +30,23 @@ object EthaReport {
      * The header. `results`: (remarks, ms) in the subscription's order, -1 failed, 0 not measured (left out);
      * null when nothing measured was one of our lines.
      */
-    fun build(nowMs: Long, trigger: String, inUseRemarks: String?, switched: Boolean, results: List<Pair<String, Long>>, rateKbps: Long = 0L): String? {
+    fun build(nowMs: Long, trigger: String, inUseRemarks: String?, switched: Boolean, results: List<Pair<String, Long>>, rateKbps: Long = 0L,
+              colds: Map<String, Long> = emptyMap()): String? {
         val items = results.mapNotNull { (remarks, ms) ->
             val l = label(remarks) ?: return@mapNotNull null
             if (ms == 0L) null else "$l:${if (ms < 0) -1 else ms}"
         }.take(MAX_LINES)
         if (items.isEmpty()) return null
+        val named = items.map { it.substringBeforeLast(':') }.toSet()
+        val cold = results.mapNotNull { (remarks, _) ->
+            val l = label(remarks) ?: return@mapNotNull null
+            val c = colds[remarks] ?: return@mapNotNull null
+            if (l in named && c > 0) "$l:$c" else null
+        }
         val use = label(inUseRemarks).orEmpty()
         val rate = if (rateKbps > 0) ";r=$rateKbps" else ""
-        return "v=1;t=${nowMs / 1000};trig=$trigger;use=$use;sw=${if (switched) 1 else 0}$rate;l=${items.joinToString(",")}"
+        val c = if (cold.isEmpty()) "" else ";c=${cold.joinToString(",")}"
+        return "v=1;t=${nowMs / 1000};trig=$trigger;use=$use;sw=${if (switched) 1 else 0}$rate;l=${items.joinToString(",")}$c"
     }
 
     /** What identifies a line to the running core: its address, port, name and user id — not Cloudflare's ECH

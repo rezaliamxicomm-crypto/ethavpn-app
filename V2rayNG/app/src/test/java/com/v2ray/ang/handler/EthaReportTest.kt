@@ -57,4 +57,14 @@ class EthaReportTest {
         val without = EthaReport.build(1_800_000_000_000L, "auto", "EthaVPN-REALITY-relay-FRA4-443", false, listOf("EthaVPN-REALITY-relay-FRA4-443" to 200L))
         assertEquals("v=1;t=1800000000;trig=auto;use=REALITY-relay-FRA4-443;sw=0;l=REALITY-relay-FRA4-443:200", without)
     }
+
+    @Test
+    fun theConnectTimesRideAfterTheLinesOnlyForLinesNamedThere() {
+        val h = EthaReport.build(1_800_000_000_000L, "manual", "EthaVPN-REALITY-relay-FRA4-443", false, listOf(
+            "EthaVPN-REALITY-relay-FRA4-443" to 200L,
+            "EthaVPN-WS-www-CleanIP1-443" to -1L,
+            "EthaVPN-XHTTP-www-CleanIP1-443" to 0L,            // not measured: not in l, so not in c either
+        ), colds = mapOf("EthaVPN-REALITY-relay-FRA4-443" to 540L, "EthaVPN-XHTTP-www-CleanIP1-443" to 900L, "EthaVPN-WS-www-CleanIP1-443" to -1L))
+        assertEquals("v=1;t=1800000000;trig=manual;use=REALITY-relay-FRA4-443;sw=0;l=REALITY-relay-FRA4-443:200,WS-www-CleanIP1-443:-1;c=REALITY-relay-FRA4-443:540", h)
+    }
 }

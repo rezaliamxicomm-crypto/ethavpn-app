@@ -60,7 +60,7 @@ class CoreVpnService : VpnService(), ServiceControl {
         object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 setUnderlyingNetworks(arrayOf(network))
-                CoreServiceManager.onNetworkChanged()
+                CoreServiceManager.onNetworkChanged(network)   // the network under the tunnel, named for Auto (2.1.1)
             }
 
             override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {

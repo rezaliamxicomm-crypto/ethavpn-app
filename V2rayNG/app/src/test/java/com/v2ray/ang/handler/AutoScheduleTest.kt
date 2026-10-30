@@ -135,4 +135,19 @@ class AutoScheduleTest {
         assertFalse(AutoSchedule.nextFallback(current = true, targetAnswered = true, fallbackAnswered = false))     // the scout answers: back
         assertTrue(AutoSchedule.nextFallback(current = true, targetAnswered = false, fallbackAnswered = true))
     }
+
+    @Test
+    fun connectCanHoldTheFirstProbeAndWakingWithAnOldPictureFreshensIt() {
+        val sch = AutoSchedule()
+        sch.start(s(10.0), lines, delayMs = 2_000L)                                                                       // 2.1.1: two seconds for the tunnel to settle
+        assertNull(sch.action(s(11.9), warm = true, watched = true, searching = false, current = "r1", due = all))
+        assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(12.0), warm = false, watched = false, searching = false, current = "r1", due = all))
+        sch.currentProbed(s(12.0), p)
+        sch.reseed(s(60.0), lines, p, 0.5)
+        sch.freshen(s(700.0), lines)                                                                                        // the phone woke with an old picture
+        assertEquals(AutoSchedule.Phase.FIRST, sch.phase); assertTrue(sch.forced)
+        assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(700.0), warm = false, watched = false, searching = false, current = "r1", due = all))
+        sch.currentProbed(s(700.0), p)
+        assertEquals(AutoSchedule.Action.Probe(listOf("r2", "x1")), sch.action(s(700.0), warm = false, watched = false, searching = false, current = "r1", due = all))
+    }
 }

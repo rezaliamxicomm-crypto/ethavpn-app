@@ -97,6 +97,11 @@ class EthaAuto(
     @Volatile var current: String = start
         private set
     private val results = ConcurrentHashMap<String, Long>()     // guid → ms, -1 failed
+    private val colds = ConcurrentHashMap<String, Long>()       // guid → the connect time of the last probe: its first request, handshakes and all (2.1.1)
+    @Volatile private var firstReading = false                  // the line in use has answered once since Connect; before that the chip stays "Connecting…"
+    @Volatile private var earlyRetried = false                  // the first probe after Connect failed and was given a second try
+    @Volatile private var startedAt = 0L
+    @Volatile private var lastPassAt = 0L                       // when the whole picture was last measured (a pass end)
     private val schedule = AutoSchedule()
     private val decision = AutoDecision()
     @Volatile private var network = network
@@ -133,7 +138,8 @@ class EthaAuto(
             val guid = best?.let { byLabel[it] }
             if (guid != null && guid != current) switchTo(guid, if (known != null) "known best on $network" else "the box's advice", notify = false)
         }
-        schedule.start(mono(), order())
+        startedAt = mono(); lastPassAt = startedAt
+        schedule.start(startedAt, order(), START_DELAY_MS)   // the first probe two seconds on, when the tunnel has settled (2.1.1)
         LogUtil.i(AppConfig.TAG, "Auto: ${lines.size} lines behind the balancer, on ${nameOf(current)}; network $network, ${health.entries.size} lines remembered" +
             (hint?.let { ", the box advises ${it.order.size} (${it.dead.size} dead${if (it.outage) ", outage" else ""})" } ?: "") + "; $policy")
         scope.launch {
@@ -151,6 +157,24 @@ class EthaAuto(
         saveHealth(force = true)
     }
 
+    /** The screen came on, or the phone woke: the line in use is probed at once, and when the whole picture is older than
+     *  STALE_PASS_MS the quick first pass runs again. Nothing runs while the phone sleeps (2.1.1). */
+    fun onScreenOn() {
+        scope.launch { measuring.withLock { if (!stopped) wakeLocked() } }
+    }
+
+    private fun wakeLocked() {
+        val now = mono()
+        if (schedule.nextProbeAt == null) return
+        if (!searching && now - lastPassAt > STALE_PASS_MS) {
+            schedule.freshen(now, order())
+            probesThisPass = 0
+            LogUtil.i(AppConfig.TAG, "Auto: the phone woke with a picture ${(now - lastPassAt) / 60_000} min old; the quick pass runs again")
+        } else {
+            schedule.wake(now)
+        }
+    }
+
     /** The Home screen is showing the chip: the line in use is kept fresh for it, and the state is said again (a Home
      *  opened mid-outage learns it). */
     fun noteWatched() {
@@ -158,12 +182,16 @@ class EthaAuto(
         announceState()
     }
 
-    /** The customer pressed Test latency: every line measured now, the decision by the margin alone, the outcome said. */
+    /** The customer pressed Test latency: every line measured now — the line in use first, so the chip has its number
+     *  within a second, then every other line at once (the core library connects them all, then reads them all: no line
+     *  is read beside another's handshakes) —, the decision by the margin alone, the outcome said. */
     fun pingAll() {
         scope.launch {
             measuring.withLock {
                 if (stopped) return@withLock
-                measureSet(lines, policy.concurrency, policy.probeTimeoutMs)
+                byGuid[current]?.let { measureSet(listOf(it), 1, policy.probeTimeoutMs, whole = false) }
+                val rest = lines.filter { it.guid != current }
+                if (rest.isNotEmpty()) measureSet(rest, rest.size, policy.probeTimeoutMs, whole = true)
                 val moved = decide(AutoDecision.Phase.MANUAL, "manual", notify = false)
                 report("manual", moved)
                 updateSearchingLocked()
@@ -335,6 +363,7 @@ class EthaAuto(
         movedInPass = false
         passRateKbps = 0
         probesThisPass = 0
+        lastPassAt = mono()
         saveHealth()
     }
 
@@ -345,6 +374,13 @@ class EthaAuto(
         val out = measureOnce(listOf(line), 1, if (schedule.fallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, policy.probeTimeoutMs)
         schedule.currentProbed(mono(), policy)
         if (out.isEmpty()) return
+        if ((out[line.guid] ?: -1L) < 0 && !firstReading && !earlyRetried && mono() - startedAt < EARLY_RETRY_WINDOW_MS) {
+            // the first probe after Connect ran on a tunnel still settling: once more in a second, nothing held against the line (2.1.1)
+            earlyRetried = true
+            schedule.currentDueAt = mono() + EARLY_RETRY_MS
+            LogUtil.i(AppConfig.TAG, "Auto: ${nameOf(current)} gave no answer right after Connect; once more in a second")
+            return
+        }
         record(out, listOf(line))
         if ((out[line.guid] ?: -1L) < 0) {
             LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(current)} did not answer its probe")
@@ -428,8 +464,9 @@ class EthaAuto(
 
     // ---------------------------------------------------------------- measuring
 
-    /** A set of lines at once (a manual test): the box's target; nothing from it on any line and something from the fallback moves the probes to the fallback until the target answers again. */
-    private fun measureSet(which: List<Line>, concurrency: Int, timeoutMs: Long): Map<String, Long> {
+    /** A set of lines at once (a manual test): the box's target; nothing from it on any line and something from the fallback moves the probes to the fallback until the target answers again.
+     *  [whole]: the set stands for every line (the fallback question is asked only then). */
+    private fun measureSet(which: List<Line>, concurrency: Int, timeoutMs: Long, whole: Boolean = which.size == lines.size): Map<String, Long> {
         if (which.isEmpty()) return emptyMap()
         val out: Map<String, Long>
         if (schedule.fallback) {
@@ -441,7 +478,7 @@ class EthaAuto(
             out = measureOnce(which, concurrency, if (back) AppConfig.ETHA_PROBE_URL else AppConfig.ETHA_PROBE_FALLBACK_URL, timeoutMs)
         } else {
             var first = measureOnce(which, concurrency, AppConfig.ETHA_PROBE_URL, timeoutMs)
-            if (which.size == lines.size && first.isNotEmpty() && first.values.all { it < 0 }) {
+            if (whole && first.isNotEmpty() && first.values.all { it < 0 }) {
                 val again = measureOnce(which, concurrency, AppConfig.ETHA_PROBE_FALLBACK_URL, timeoutMs)
                 val answered = again.values.any { it > 0 }
                 schedule.fallback = AutoSchedule.nextFallback(current = false, targetAnswered = false, fallbackAnswered = answered)
@@ -472,7 +509,9 @@ class EthaAuto(
             val i = entry.lastIndexOf('=')
             if (i <= 0) continue
             val line = byTag[entry.substring(0, i)] ?: continue
-            out[line.guid] = entry.substring(i + 1).toLongOrNull() ?: continue
+            val pair = parsePair(entry.substring(i + 1)) ?: continue
+            out[line.guid] = pair.first
+            if (pair.second > 0) colds[line.guid] = pair.second
         }
         if (raw.isNotEmpty()) for (line in which) if (line.guid !in out) out[line.guid] = -1L   // a line the core did not report did not answer
         return out
@@ -487,6 +526,7 @@ class EthaAuto(
             if (ms > 0) {
                 results[guid] = ms
                 health.ok(labels.getValue(guid), ms, wallSec)
+                if (guid == current) firstReading = true
             } else if (condemn) {
                 results[guid] = ms
                 health.failed(labels.getValue(guid), wallSec, policy)
@@ -532,7 +572,9 @@ class EthaAuto(
     /** The line in use's time to the UI: the chip's number. */
     private fun tellLatency() {
         if (stopped) return
-        MessageUtil.sendMsg2UI(service, AppConfig.MSG_ETHA_LATENCY, (results[current] ?: 0L).toString())
+        val ms = results[current] ?: 0L
+        if (ms <= 0 && !firstReading) return   // before the first answer after Connect the chip stays "Connecting…", whatever a probe did (2.1.1)
+        MessageUtil.sendMsg2UI(service, AppConfig.MSG_ETHA_LATENCY, ms.toString())
     }
 
     /** The state and the latency said again (a Home opened or recreated mid-session learns them). */
@@ -548,7 +590,8 @@ class EthaAuto(
         if (stopped) return
         val probed = synchronized(probedSinceReport) { probedSinceReport.toSet() }
         val header = EthaReport.build(System.currentTimeMillis(), trigger, remarks[current], switched,
-            lines.map { (remarks[it.guid] ?: "") to (if (it.guid in probed) (results[it.guid] ?: 0L) else 0L) }, passRateKbps)
+            lines.map { (remarks[it.guid] ?: "") to (if (it.guid in probed) (results[it.guid] ?: 0L) else 0L) }, passRateKbps,
+            colds = lines.mapNotNull { l -> colds[l.guid]?.takeIf { l.guid in probed && it > 0 }?.let { (remarks[l.guid] ?: "") to it } }.toMap())
         if (header != null) {
             MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, header)
             synchronized(probedSinceReport) { probedSinceReport.clear() }
@@ -652,7 +695,11 @@ class EthaAuto(
         private const val SAMPLES_KEPT = 32
         private const val STALL_PROBE_GAP_MS = 10_000L
         private const val STALL_FALSE_ALARM_REST_MS = 60_000L
-        private const val NETWORK_SETTLE_MS = 15_000L
+        private const val NETWORK_SETTLE_MS = 5_000L           // 15 s until 2.1.0; Connect itself no longer counts as a change
+        private const val START_DELAY_MS = 2_000L              // the first probe after Connect waits for the tunnel to settle
+        private const val EARLY_RETRY_WINDOW_MS = 10_000L      // a first probe that fails within this gets one more try…
+        private const val EARLY_RETRY_MS = 1_000L              // …a second later, nothing held against the line
+        private const val STALE_PASS_MS = 600_000L             // the phone woke with a picture older than this: the quick pass again
         private const val WATCHED_FOR_MS = 15_000L
         private const val RATE_WINDOW_MS = 5_000L
         private const val RATE_MIN_BYTES = 256L * 1024
@@ -670,6 +717,15 @@ class EthaAuto(
             val lines = usable(MmkvManager.decodeServerList(subId))
             if (lines.size < 2 || lines.none { it.guid == selectedGuid }) return null
             return lines
+        }
+
+        /** One result of the core library's MeasureOutbounds: "warm/cold" (2.1.1: the warm round trip and the connect time) or a
+         *  bare "ms" from an older library → (warm, cold), cold -1 when there is none; null when it is neither. */
+        fun parsePair(v: String): Pair<Long, Long>? {
+            val slash = v.indexOf('/')
+            if (slash < 0) return v.toLongOrNull()?.let { it to -1L }
+            val warm = v.substring(0, slash).toLongOrNull() ?: return null
+            return warm to (v.substring(slash + 1).toLongOrNull() ?: -1L)
         }
 
         /** The usable lines among guids, tagged as getV2rayConfigForLines tags them (the same filter, the same order). */
@@ -705,7 +761,7 @@ class EthaAuto(
                     val i = entry.lastIndexOf('=')
                     if (i <= 0) continue
                     val line = byTag[entry.substring(0, i)] ?: continue
-                    out[line.guid] = entry.substring(i + 1).toLongOrNull() ?: continue
+                    out[line.guid] = parsePair(entry.substring(i + 1))?.first ?: continue
                 }
                 return out
             }

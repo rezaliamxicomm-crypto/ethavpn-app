@@ -131,10 +131,16 @@ func (x *CoreController) instance() *core.Instance {
 	return x.coreInstance
 }
 
-// MeasureOutbounds measures the outbounds named in tagsCSV ("tag,tag,…") through the running core: a HEAD request to
-// url forced down that outbound alone, then a second down the kept-alive connection, the smaller time kept — the warm
-// round trip, not the handshakes. At most concurrency at once (0: all), timeoutMs per request (0: 5000). The result
-// is "tag=ms;tag=-1;…" in the order given, -1 for an outbound that gave no answer in time; "" when the core is down.
+// MeasureOutbounds measures the outbounds named in tagsCSV ("tag,tag,…") through the running core, in two phases, so
+// that no line is read while another line's handshakes run beside it (2.1.1). Phase one opens one connection through
+// each outbound and sends a first HEAD request to url: the cold time, handshakes and all. Phase two — once every open
+// attempt has ended, or phase1Grace after the start, whichever comes first — sends a second HEAD down each kept-alive
+// connection, all together: the warm round trip, one small packet each way. A warm read that fails gets one more try on
+// a fresh connection, cold and warm again; a line whose first request gets no answer within timeoutMs is failed. At
+// most concurrency opens at once (0: all), timeoutMs per request (0: 5000). The result is "tag=warm/cold;…" in the
+// order given — warm -1 for a line that failed, cold -1 when even its first request got nothing —, "" when the core
+// is down. Until 2.1.0 the warm read followed the cold one at once, beside other lines' handshakes, and a failed warm
+// read kept the cold time in its place: a line looked three to five times slower than it was.
 func (x *CoreController) MeasureOutbounds(tagsCSV string, url string, timeoutMs int, concurrency int) string {
 	inst := x.instance()
 	if inst == nil {
@@ -184,6 +190,12 @@ func splitTags(csv string) []string {
 	return tags
 }
 
+// phase1Grace: phase two starts this long after the start at the latest, so one line that cannot connect does not hold
+// every other line's warm read; the straggler reads alone when (if) it connects, and fails at its own timeout.
+const phase1Grace = 2500 * time.Millisecond
+
+type probeResult struct{ warm, cold int64 }
+
 func measureOutbounds(inst *core.Instance, tags []string, url string, timeoutMs int, concurrency int) string {
 	if timeoutMs <= 0 {
 		timeoutMs = 5000
@@ -195,18 +207,30 @@ func measureOutbounds(inst *core.Instance, tags []string, url string, timeoutMs 
 		url = "https://www.gstatic.com/generate_204"
 	}
 	timeout := time.Duration(timeoutMs) * time.Millisecond
-	results := make([]int64, len(tags))
+	results := make([]probeResult, len(tags))
 	slots := make(chan struct{}, max(concurrency, 1))
+	opened := make(chan struct{}, len(tags)) // one token per open attempt ended, whatever it found: never blocks
+	warmGo := make(chan struct{})            // closed when phase two may start
 	var wg sync.WaitGroup
 	for i, tag := range tags {
 		wg.Add(1)
 		go func(i int, tag string) {
 			defer wg.Done()
-			slots <- struct{}{}
-			defer func() { <-slots }()
-			results[i] = measureVia(inst, tag, url, timeout)
+			results[i] = probeVia(inst, tag, url, timeout, slots, opened, warmGo)
 		}(i, tag)
 	}
+	go func() { // the barrier between the phases
+		deadline := time.After(min(phase1Grace, timeout))
+		for n := 0; n < len(tags); n++ {
+			select {
+			case <-opened:
+			case <-deadline:
+				close(warmGo)
+				return
+			}
+		}
+		close(warmGo)
+	}()
 	wg.Wait()
 
 	var b strings.Builder
@@ -216,14 +240,46 @@ func measureOutbounds(inst *core.Instance, tags []string, url string, timeoutMs 
 		}
 		b.WriteString(tag)
 		b.WriteByte('=')
-		b.WriteString(strconv.FormatInt(results[i], 10))
+		b.WriteString(strconv.FormatInt(results[i].warm, 10))
+		b.WriteByte('/')
+		b.WriteString(strconv.FormatInt(results[i].cold, 10))
 	}
 	return b.String()
 }
 
-// measureVia: one outbound, two HEAD requests down one kept-alive connection, the smaller time; -1 when the first
-// got no answer within timeout (no second attempt — a line that does not answer in that window counts as failed).
-func measureVia(inst *core.Instance, tag string, url string, timeout time.Duration) int64 {
+// probeVia: one outbound. Phase one, under the slots: a connection through the outbound and the first HEAD (cold). Then
+// it waits for warmGo — passing at once when phase one is already over — and sends the warm HEAD down the same
+// connection; when that one fails, once more on a fresh connection, cold and warm again (the first cold time is kept).
+// Every open attempt sends one token on opened, whatever it found, so the barrier can count.
+func probeVia(inst *core.Instance, tag string, url string, timeout time.Duration, slots chan struct{}, opened chan<- struct{}, warmGo <-chan struct{}) probeResult {
+	slots <- struct{}{}
+	client, tr := probeClient(inst, tag, timeout)
+	cold, ok := headOnce(client, url)
+	<-slots
+	opened <- struct{}{}
+	if !ok {
+		tr.CloseIdleConnections()
+		return probeResult{warm: -1, cold: -1}
+	}
+	<-warmGo
+	if warm, ok := headOnce(client, url); ok {
+		tr.CloseIdleConnections()
+		return probeResult{warm: warm, cold: cold}
+	}
+	tr.CloseIdleConnections()
+	client, tr = probeClient(inst, tag, timeout)
+	defer tr.CloseIdleConnections()
+	if _, ok := headOnce(client, url); !ok {
+		return probeResult{warm: -1, cold: cold}
+	}
+	if warm, ok := headOnce(client, url); ok {
+		return probeResult{warm: warm, cold: cold}
+	}
+	return probeResult{warm: -1, cold: cold}
+}
+
+// probeClient: an HTTP client whose every connection is dialled through the one outbound, kept alive between requests.
+func probeClient(inst *core.Instance, tag string, timeout time.Duration) (*http.Client, *http.Transport) {
 	tr := &http.Transport{
 		TLSHandshakeTimeout: timeout,
 		DisableKeepAlives:   false,
@@ -237,17 +293,7 @@ func measureVia(inst *core.Instance, tag string, url string, timeout time.Durati
 			return core.Dial(session.SetForcedOutboundTagToContext(ctx, tag), inst, dest)
 		},
 	}
-	defer tr.CloseIdleConnections()
-	client := &http.Client{Transport: tr, Timeout: timeout}
-
-	first, ok := headOnce(client, url)
-	if !ok {
-		return -1
-	}
-	if second, ok := headOnce(client, url); ok && second < first {
-		return second
-	}
-	return first
+	return &http.Client{Transport: tr, Timeout: timeout}, tr
 }
 
 func headOnce(client *http.Client, url string) (int64, bool) {

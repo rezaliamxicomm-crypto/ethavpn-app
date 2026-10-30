@@ -38,12 +38,23 @@ class AutoSchedule {
     var wakeDue = false
     var searchingSince: Long? = null
 
-    /** Connect: the rotation in the order the health memory suggests, the line in use probed first, then the quick pass. */
-    fun start(nowMs: Long, order: List<String>) {
+    /** Connect: the rotation in the order the health memory suggests, the line in use probed first, then the quick pass —
+     *  [delayMs] after now (2.1.1: two seconds, the time the tunnel takes to settle). */
+    fun start(nowMs: Long, order: List<String>, delayMs: Long = 0L) {
         this.order = order
         cursor = 0; phase = Phase.FIRST; passes = 0; forced = true
+        nextProbeAt = nowMs + delayMs
+        currentDueAt = nowMs + delayMs
+    }
+
+    /** The phone woke with an old picture (2.1.1): the quick first pass again, now, the line in use first; the pass count
+     *  goes on. */
+    fun freshen(nowMs: Long, order: List<String>) {
+        this.order = order
+        cursor = 0; phase = Phase.FIRST; forced = true
         nextProbeAt = nowMs
         currentDueAt = nowMs
+        wakeDue = false
     }
 
     /** A manual test ended now (every line measured, warm): the rotation re-seeded best-first at the steady pace. */
@@ -146,7 +157,8 @@ class AutoSchedule {
     }
 
     /** Wi-Fi ↔ mobile (or the path back after a gap): the trickle restarts in [settleMs] as a quick first pass, in use or
-     *  not; a second event within [debounceMs] is the same event. */
+     *  not; a second event within [debounceMs] is the same event. (The engine passes 5 s since 2.1.1; the default here is
+     *  the old 15 s the tests pin.) */
     fun networkChanged(nowMs: Long, settleMs: Long = 15_000L, debounceMs: Long = 60_000L) {
         lastNetworkAt?.let { if (nowMs - it < debounceMs) return }
         lastNetworkAt = nowMs

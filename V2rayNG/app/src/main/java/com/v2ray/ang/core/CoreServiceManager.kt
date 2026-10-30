@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.system.OsConstants
@@ -308,7 +309,7 @@ object CoreServiceManager {
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core started successfully")
         auto?.stop()
         auto = lines?.let {
-            EthaAuto(service, coreController, it, guid, EthaNetwork.signature(service), onLinesChanged = {
+            EthaAuto(service, coreController, it, guid, EthaNetwork.signature(service, underlyingNetwork), onLinesChanged = {
                 // a fetch while searching brought other lines: the core restarts on them (the same path as a settings change)
                 MessageUtil.sendMsg2Service(service, AppConfig.MSG_STATE_RESTART, "")
             }).also { engine -> engine.start() }
@@ -316,10 +317,15 @@ object CoreServiceManager {
     }
 
     /** Wi-Fi ↔ mobile: what Auto measured no longer holds; it measures again once the network has settled. */
-    fun onNetworkChanged() {
+    /** The network under the tunnel, from the VPN service's callback: Auto names its network after it, never after the
+     *  tunnel itself (2.1.1). */
+    @Volatile var underlyingNetwork: Network? = null
+
+    fun onNetworkChanged(network: Network? = null) {
+        if (network != null) underlyingNetwork = network
         if (!coreController.isRunning) return
         val context = serviceControl?.get()?.getService() ?: return
-        auto?.onNetworkChanged(EthaNetwork.signature(context))
+        auto?.onNetworkChanged(EthaNetwork.signature(context, underlyingNetwork))
     }
 
     /**
@@ -584,6 +590,7 @@ object CoreServiceManager {
                 Intent.ACTION_SCREEN_ON -> {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: Screen on")
                     NotificationManager.startSpeedNotification()
+                    auto?.onScreenOn()   // the line in use probed now; the whole picture again when it is old (2.1.1)
                 }
             }
         }
