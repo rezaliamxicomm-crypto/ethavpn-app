@@ -36,8 +36,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  *   - at start every line is measured at once and new connections move to the best when the line in use failed or is
  *     beaten by the margin; a change of line cuts nothing that is open;
- *   - while the tunnel is in use (traffic within idleSec) every line is measured again every roundSec, a failed line
- *     every failedRetrySec; idle, nothing runs;
+ *   - a settling round settleSec after the connect race (the race reads high on a core a second old); while the tunnel
+ *     is in use (traffic within idleSec) every line is measured again roundSec after the last measurement ended, give
+ *     or take the jitter, a failed line only after failedRetrySec; idle, nothing runs, and traffic returning brings a
+ *     round at once; a network change is one normal round 15 s later — AutoSchedule is the one clock for all of it;
+ *     the box's probe target, and the fallback for one round at a time only;
  *   - a stall — bytes out, none back for stallSec, read from the inbound's counters every TICK_MS — probes the line in
  *     use at once, and a failed probe moves to the best of the rest, measured anew;
  *   - no line answers: the Searching state (MSG_ETHA_STATE) — every line again every searchSec, in use or not, and the
@@ -69,23 +72,19 @@ class EthaAuto(
     @Volatile var current: String = start
         private set
     private val results = ConcurrentHashMap<String, Long>()     // guid → ms, -1 failed
-    private val probedAt = ConcurrentHashMap<String, Long>()
+    private val schedule = AutoSchedule()                       // the one clock: the next round, the settling round, the retries, the target
     private val samples = ArrayDeque<Triple<Long, Long, Long>>()  // time, bytes up, bytes down
     @Volatile private var lastTrafficAt = now()
-    @Volatile private var lastRoundAt = 0L
-    @Volatile private var roundIntervalMs = policy.roundMs   // this round's interval: roundSec with the jitter, drawn when a round ends
+    @Volatile private var wasInUse = true
     @Volatile private var lastStallProbeAt = 0L
     @Volatile private var searching = false
     @Volatile private var lastSearchFetchAt = 0L
     private val fetching = AtomicBoolean(false)
-    @Volatile private var probeUrl = AppConfig.ETHA_PROBE_URL
-    @Volatile private var fallbackTried = false
 
     fun start() {
         LogUtil.i(AppConfig.TAG, "Auto: ${lines.size} lines behind the balancer, starting on ${nameOf(current)}; $policy")
         scope.launch {
             race(reason = "connect", userAsked = false)
-            scheduleSettle()
             while (isActive) {
                 delay(TICK_MS)
                 try { tick() } catch (e: Exception) { LogUtil.e(AppConfig.TAG, "Auto: tick failed", e) }
@@ -102,38 +101,28 @@ class EthaAuto(
         scope.launch { race(reason = "manual", userAsked = true) }
     }
 
-    /** Wi-Fi ↔ mobile: what was measured no longer holds; measure again once the network has settled. */
+    /**
+     * Wi-Fi ↔ mobile (or the network back after a gap): what was measured no longer holds. One normal round 15 s from
+     * now, every line, in use or not — not a race of every line at once — and a second event within a minute is the
+     * same event (AutoSchedule.networkChanged).
+     */
     fun onNetworkChanged() {
         synchronized(samples) { samples.clear() }
-        scope.launch {
-            delay(NETWORK_SETTLE_MS)
-            race(reason = "network", userAsked = false)
-            scheduleSettle()
-        }
+        schedule.networkChanged(now(), NETWORK_SETTLE_MS)
+        LogUtil.i(AppConfig.TAG, "Auto: the network changed; every line measured again in ${NETWORK_SETTLE_MS / 1000} s")
     }
 
     /**
-     * The first race measures every line at once on a core a second old and reads high: a settling round with the
-     * normal concurrency, settleSec later, corrects the pick within seconds instead of at the next round.
+     * The settling round (AutoSchedule.settleAt): every line with the normal concurrency, settleSec after the connect
+     * race — the race measured every line at once on a core a second old and read high.
      */
-    private fun scheduleSettle() {
-        if (policy.settleSec <= 0) return
-        scope.launch {
-            delay(policy.settleSec * 1000L)
-            if (searching) return@launch
-            LogUtil.i(AppConfig.TAG, "Auto: the settling round")
-            measure(lines, policy.concurrency)
-            markRound()
-            val moved = decide(reason = "settle", notify = true)
-            report("settle", moved)
-            updateSearching()
-        }
-    }
-
-    /** A round ended now; the next one comes after roundSec give or take the jitter. */
-    private fun markRound() {
-        lastRoundAt = now()
-        roundIntervalMs = policy.jitteredRoundMs(Math.random())
+    private suspend fun settleRound() {
+        LogUtil.i(AppConfig.TAG, "Auto: the settling round")
+        val out = measure(lines, policy.concurrency)
+        val moved = decide(reason = "settle", notify = true)
+        report("settle", moved)
+        updateSearching()
+        schedule.roundDone(now(), out, policy, Math.random(), searching)
     }
 
     /** New connections take the line now; what is open stays where it is. */
@@ -164,13 +153,15 @@ class EthaAuto(
             probeCurrent()
             return
         }
-        if (searching) {
-            if (now - lastRoundAt >= policy.searchMs) round()
-            if (now - lastSearchFetchAt >= policy.searchFetchMs) searchFetch()
-            return
-        }
+        if (searching && now - lastSearchFetchAt >= policy.searchFetchMs) searchFetch()
         val inUse = now - lastTrafficAt < policy.idleMs
-        if (inUse && now - lastRoundAt >= roundIntervalMs) round()
+        if (inUse && !wasInUse) { schedule.wake(now); LogUtil.i(AppConfig.TAG, "Auto: traffic is back after the idle gap; measuring now") }
+        wasInUse = inUse
+        when (schedule.action(now, inUse, searching)) {
+            AutoSchedule.Action.SETTLE -> { schedule.settleTaken(); settleRound() }
+            AutoSchedule.Action.ROUND -> round()
+            null -> {}
+        }
     }
 
     private fun sampleTraffic(now: Long) {
@@ -192,31 +183,36 @@ class EthaAuto(
         tellLatency()
         if ((r[line.guid] ?: -1L) > 0) return
         LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(current)} did not answer after a stall")
-        measure(lines.filter { it.guid != current }, concurrency = lines.size)
-        markRound()
+        val rest = measure(lines.filter { it.guid != current }, concurrency = lines.size)
         val moved = decide(reason = "stall", notify = true)
         report("stall", moved)
         updateSearching()
+        schedule.roundDone(now(), rest, policy, Math.random(), searching)
     }
 
     private suspend fun round() {
-        val interval = roundIntervalMs
-        markRound()
         val now = now()
-        val due = if (searching) lines else lines.filter { policy.due(now, probedAt[it.guid] ?: 0L, (results[it.guid] ?: 0L) < 0, interval) }
-        if (due.isEmpty()) return
-        measure(due, policy.concurrency)
-        val moved = decide(reason = "round", notify = true)
-        report("auto", moved)
+        val ids = schedule.linesForRound(now, lines.map { it.guid }, searching).toSet()
+        val due = lines.filter { it.guid in ids }
+        if (due.isEmpty()) {   // every line failed and waits its retry: the clock moves on, nothing is measured
+            schedule.roundDone(now, emptyMap(), policy, Math.random(), searching)
+            return
+        }
+        val trigger = if (schedule.forced) "network" else "auto"
+        val out = measure(due, policy.concurrency)
+        val moved = decide(reason = trigger, notify = true)
+        report(trigger, moved)
         updateSearching()
+        schedule.roundDone(now(), out, policy, Math.random(), searching)
     }
 
     private suspend fun race(reason: String, userAsked: Boolean) {
-        measure(lines, concurrency = lines.size)
-        markRound()
+        val out = measure(lines, concurrency = lines.size)
         val moved = decide(reason, notify = !userAsked)
         report(reason, moved)
         updateSearching()
+        // a manual test's numbers are warm: no settling round after it
+        schedule.raceDone(now(), out, policy, Math.random(), searching, settle = reason == "connect")
         if (userAsked) {
             val outcome = when {
                 lines.none { (results[it.guid] ?: 0L) > 0 } -> "none"
@@ -228,26 +224,36 @@ class EthaAuto(
     }
 
     /**
-     * The lines measured through the running core, at most concurrency at once. When a full set gets no answer at all
-     * on the probe target, the fallback is tried once (a box that does not have the target yet); lines the core did
-     * not report keep their last result.
+     * The lines measured through the running core, at most concurrency at once; lines the core did not report keep
+     * their last result. The target: the box's own, and the fallback only for a round in which a full set got no answer
+     * from it at all — never for longer: a round on the fallback starts with one probe of the target and comes back to it
+     * the moment it answers (AutoSchedule.nextFallback).
      */
     private suspend fun measure(which: List<Line>, concurrency: Int): Map<String, Long> = measuring.withLock {
         if (which.isEmpty()) return emptyMap()
-        var out = measureOnce(which, concurrency, probeUrl)
-        if (which.size == lines.size && out.isNotEmpty() && out.values.all { it < 0 } && !fallbackTried) {
-            fallbackTried = true
-            val again = measureOnce(which, concurrency, AppConfig.ETHA_PROBE_FALLBACK_URL)
-            if (again.values.any { it > 0 }) {
-                LogUtil.w(AppConfig.TAG, "Auto: the probe target gave no answer on any line; measuring with the fallback from now on")
-                probeUrl = AppConfig.ETHA_PROBE_FALLBACK_URL
-                out = again
+        val full = which.size == lines.size
+        var out: Map<String, Long>
+        if (schedule.fallback) {
+            val scout = which.firstOrNull { it.guid == current } ?: which[0]
+            val one = measureOnce(listOf(scout), 1, AppConfig.ETHA_PROBE_URL)
+            val back = (one[scout.guid] ?: -1L) > 0
+            schedule.fallback = AutoSchedule.nextFallback(current = true, fullSet = full, targetAnswered = back, fallbackAnswered = false)
+            if (back) LogUtil.i(AppConfig.TAG, "Auto: the probe target answers again; measuring against it")
+            out = measureOnce(which, concurrency, if (back) AppConfig.ETHA_PROBE_URL else AppConfig.ETHA_PROBE_FALLBACK_URL)
+        } else {
+            out = measureOnce(which, concurrency, AppConfig.ETHA_PROBE_URL)
+            if (full && out.isNotEmpty() && out.values.all { it < 0 }) {
+                val again = measureOnce(which, concurrency, AppConfig.ETHA_PROBE_FALLBACK_URL)
+                val answered = again.values.any { it > 0 }
+                schedule.fallback = AutoSchedule.nextFallback(current = false, fullSet = true, targetAnswered = false, fallbackAnswered = answered)
+                if (answered) {
+                    LogUtil.w(AppConfig.TAG, "Auto: the probe target gave no answer on any line; this round measured against the fallback, the target is tried again next round")
+                    out = again
+                }
             }
         }
-        val t = now()
         for ((guid, ms) in out) {
             results[guid] = ms
-            probedAt[guid] = t
             MmkvManager.encodeServerTestDelayMillis(guid, ms)
         }
         AutoSelect.markTested()

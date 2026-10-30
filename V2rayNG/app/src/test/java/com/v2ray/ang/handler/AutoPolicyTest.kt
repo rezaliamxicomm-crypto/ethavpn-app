@@ -53,16 +53,6 @@ class AutoPolicyTest {
     }
 
     @Test
-    fun aLineIsDueByItsLastOutcome() {
-        val now = 10_000_000L
-        assertTrue(p.due(now, now - 181_000, failed = false))
-        assertFalse(p.due(now, now - 179_000, failed = false))
-        assertFalse(p.due(now, now - 181_000, failed = true))
-        assertTrue(p.due(now, now - 901_000, failed = true))
-        assertTrue(p.due(now, 0, failed = false))
-    }
-
-    @Test
     fun theHeaderReplacesValuesWithinBoundsAndIgnoresTheRest() {
         val q = AutoPolicy.parse("round=120, failed=600;idle=300,margin=10,floor=40,stall=6,timeout=4,conc=16,fresh=900,colour=blue,round=x")
         assertEquals(AutoPolicy(120, 600, 300, 10, 40, 6, 4, 16, 900), q)
@@ -92,19 +82,15 @@ class AutoPolicyTest {
     @Test
     fun theSettlingRoundAndTheJitterComeFromTheHeaderToo() {
         assertEquals(10, AutoPolicy().settleSec)
-        assertEquals(20, AutoPolicy().jitterPct)
+        assertEquals(10, AutoPolicy().jitterPct)
         val q = AutoPolicy.parse("settle=0,jitter=50")
         assertEquals(0, q.settleSec); assertEquals(50, q.jitterPct)
         val clamped = AutoPolicy.parse("settle=999,jitter=99")
         assertEquals(120, clamped.settleSec); assertEquals(50, clamped.jitterPct)
         val p = AutoPolicy()
         assertEquals(180_000L, p.jitteredRoundMs(0.5))
-        assertEquals(144_000L, p.jitteredRoundMs(0.0))
-        assertEquals(216_000L, p.jitteredRoundMs(1.0))
+        assertEquals(162_000L, p.jitteredRoundMs(0.0))      // 10 % either way: 162–198 s
+        assertEquals(198_000L, p.jitteredRoundMs(1.0))
         assertEquals(180_000L, AutoPolicy.parse("jitter=0").jitteredRoundMs(0.9))
-        val now = 1_000_000_000L; val at = now - 150_000L
-        assertTrue(!p.due(now, at, false))                              // 150 s < 180
-        assertTrue(p.due(now, at, false, 144_000L))                      // the shortened round this time
-        assertTrue(!p.due(now, at, true, 144_000L))                      // a failed line still waits its 900 s
     }
 }

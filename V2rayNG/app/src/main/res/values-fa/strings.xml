@@ -550,6 +550,7 @@
     <string name="etha_test_latency">تست تأخیر</string>
     <string name="etha_testing">در حال تست…</string>
     <string name="etha_state_searching">در جستجوی خط…</string>
+    <string name="etha_no_answer_yet">هنوز جوابی نیامده</string>
     <string name="etha_no_line_answers">هیچ خطی جواب نمی‌دهد</string>
     <string name="etha_searching_hint">«بروزرسانی» را بزنید. باز هم نشد؟ «پشتیبانی» را بزنید.</string>
     <string name="etha_switched_faster">به خط سریع‌تری رفت</string>

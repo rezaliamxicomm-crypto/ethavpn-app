@@ -574,6 +574,7 @@
     <string name="etha_test_latency">Test latency</string>
     <string name="etha_testing">Testing…</string>
     <string name="etha_state_searching">Searching for a line…</string>
+    <string name="etha_no_answer_yet">No answer yet</string>
     <string name="etha_no_line_answers">No line answers</string>
     <string name="etha_searching_hint">Tap Refresh. Still nothing? Tap Support.</string>
     <string name="etha_switched_faster">Switched to a faster line</string>

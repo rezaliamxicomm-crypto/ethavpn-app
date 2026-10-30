@@ -37,7 +37,7 @@ data class AutoPolicy(
      *  once on a core a second old and reads high, so the first pick can be a poor one for a whole round (2026-10-30) */
     val settleSec: Int = 10,
     /** each round's interval is roundSec give or take this share, drawn anew every round, so the bursts are not periodic */
-    val jitterPct: Int = 20,
+    val jitterPct: Int = 10,
 ) {
     val roundMs: Long get() = roundSec * 1000L
     val idleMs: Long get() = idleSec * 1000L
@@ -87,9 +87,6 @@ data class AutoPolicy(
     }
 
     /** Is a line due for a probe in this round? Failed lines wait failedRetrySec, the rest roundSec. */
-    fun due(nowMs: Long, probedAtMs: Long, failed: Boolean, roundIntervalMs: Long = roundSec * 1000L): Boolean =
-        nowMs - probedAtMs >= (if (failed) failedRetrySec * 1000L else roundIntervalMs)
-
     /** The next round's interval: roundSec moved by up to jitterPct either way, `r` a draw in 0 ..< 1 (handed in so the
      *  rule is testable): 0 → the shortest, 0.5 → roundSec, 1 → the longest. */
     fun jitteredRoundMs(r: Double): Long {

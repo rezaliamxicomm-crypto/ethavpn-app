@@ -1,3 +1,5 @@
+2.0.3: the measurements run on one clock — every line three minutes after the last measurement, give or take ten percent, a second measurement ten seconds after connecting, one measurement fifteen seconds after a network change, and one as soon as traffic returns after a quiet spell; the service's own target is always tried first and never left behind; the screen says Connected the moment the tunnel is up and shows the first number within seconds.
+
 2.0.2: a second measurement of all lines ten seconds after connecting, so the first pick is corrected within seconds when the first, cold measurement read high; the three-minute rounds now vary a little in timing.
 
 2.0.1: the lines are now measured against the service's own target on iPhone too (2.0.0 fell back to the old address), and a refreshed subscription no longer restarts the connection when only Cloudflare's hourly ECH configuration changed; a new user id from the service does reach the running connection.

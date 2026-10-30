@@ -133,7 +133,7 @@ class HomeActivity : HelperBaseActivity() {
             rateOnLatency = running && connecting   // the customer's own Connect, not the state found on opening
             connecting = false
             if (!running) {
-                searching = false; testing = false; latencyMs = 0L; outcome = 0
+                searching = false; testing = false; latencyMs = 0L; latencyAt = 0L; outcome = 0
             }
             render()
         }
@@ -241,7 +241,6 @@ class HomeActivity : HelperBaseActivity() {
             when {
                 connecting -> R.string.etha_state_connecting
                 running && searching -> R.string.etha_state_searching
-                running && latencyMs <= 0L -> R.string.etha_state_connecting   // up and passing traffic, the first measurement not in yet (the operator's wording, 2026-10-30)
                 running -> R.string.etha_state_connected
                 else -> R.string.etha_state_not_connected
             }
@@ -300,8 +299,9 @@ class HomeActivity : HelperBaseActivity() {
         when {
             testing -> styleChip(chip, red = false, text = getString(R.string.etha_testing))
             searching -> styleChip(chip, red = true, text = getString(R.string.etha_no_line_answers) + " · " + ago(latencyAt))
+            latencyAt == 0L -> styleChip(chip, red = false, text = getString(R.string.etha_state_connecting))   // the first measurement is on its way
             latencyMs > 0 -> styleChip(chip, red = false, text = "$latencyMs ms · " + ago(latencyAt))
-            else -> { chip.isVisible = false; return }
+            else -> styleChip(chip, red = true, text = getString(R.string.etha_no_answer_yet) + " · " + ago(latencyAt))   // the line in use failed its probe; Auto is on it
         }
         chip.isVisible = true
     }

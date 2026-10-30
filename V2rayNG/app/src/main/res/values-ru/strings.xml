@@ -571,6 +571,7 @@
     <string name="etha_test_latency">Проверить задержку</string>
     <string name="etha_testing">Проверка…</string>
     <string name="etha_state_searching">Поиск линии…</string>
+    <string name="etha_no_answer_yet">Пока нет ответа</string>
     <string name="etha_no_line_answers">Ни одна линия не отвечает</string>
     <string name="etha_searching_hint">Нажмите «Обновить». Не помогло? Нажмите «Поддержка».</string>
     <string name="etha_switched_faster">Переключено на более быструю линию</string>
