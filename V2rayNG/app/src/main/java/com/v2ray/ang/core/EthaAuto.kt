@@ -257,6 +257,7 @@ class EthaAuto(
             health.forgive()
         }
         synchronized(samples) { samples.clear(); rateSamples.clear() }
+        synchronized(recentCurrent) { recentCurrent.clear() }      // the chip's recent readings were the old network's (2.1.3)
         decision.firstSwitchDone = false
         val before = schedule.lastNetworkAt
         schedule.networkChanged(mono(), NETWORK_SETTLE_MS)
@@ -616,22 +617,27 @@ class EthaAuto(
         // The second look (2.1.3): numbers taken apart are not comparable — a probe alone on an idle link pays the radio's wake-up —
         // so before any move by latency the line in use and the candidate are measured together, and the decision sees those numbers.
         val stale = AutoDecision.best(candidates.filter { it.id != current })
-        if (stale != null && AutoDecision.worthASecondLook(phase, cur.ms, stale.ms, policy)) {
+        if (stale != null && AutoDecision.worthASecondLook(phase, cur.ms, stale.ms, policy) && !(phase == AutoDecision.Phase.FIRST && decision.firstSwitchDone)) {
             val apart = cur.ms to stale.ms
             val pair = listOfNotNull(byGuid[current], byGuid[stale.id])
-            val out = measureOnce(pair, pair.size, if (schedule.fallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, policy.probeTimeoutMs)
-            if (out.isNotEmpty()) {
-                record(out, pair)
-                candidates = lines.map { AutoDecision.Candidate(it.guid, results[it.guid] ?: 0L, it.order) }
-                cur = candidates.first { it.id == current }
-                LogUtil.i(AppConfig.TAG, "Auto: a second look, together: ${nameOf(current)}=${results[current]} ${nameOf(stale.id)}=${results[stale.id]} (apart they read ${apart.first} and ${apart.second})")
+            val timeout = if (phase == AutoDecision.Phase.FIRST) minOf(policy.probeTimeoutMs, FIRST_PASS_TIMEOUT_MS) else policy.probeTimeoutMs
+            val out = measureOnce(pair, pair.size, if (schedule.fallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, timeout)
+            if (out.isEmpty()) return false                      // no measurement at all (the core restarting): no move on the numbers taken apart
+            record(out, pair)
+            candidates = lines.map { AutoDecision.Candidate(it.guid, results[it.guid] ?: 0L, it.order) }
+            cur = candidates.first { it.id == current }
+            LogUtil.i(AppConfig.TAG, "Auto: a second look, together: ${nameOf(current)}=${results[current]} ${nameOf(stale.id)}=${results[stale.id]} (apart they read ${apart.first} and ${apart.second})")
+            if (cur.ms < 0) {                                     // the line in use failed in the look: the failover's own path (its fetch, its report)
+                failoverLocked("probe", currentFailed = true)
+                return false
+            }
+            val lead = AutoDecision.best(candidates.filter { it.id != current })
+            if (lead != null && lead.id != stale.id) {            // another line leads by a number not taken together: not this pass — before the decision's clocks move
+                LogUtil.i(AppConfig.TAG, "Auto: ${nameOf(lead.id)} leads by a reading taken apart: no move this pass")
+                return false
             }
         }
         val target = decision.target(mono(), phase, cur, candidates, policy) ?: return false
-        if (stale != null && target != stale.id && cur.ms >= 0 && phase != AutoDecision.Phase.MANUAL) {   // another line leads by a number not taken together: not this pass
-            LogUtil.i(AppConfig.TAG, "Auto: ${nameOf(target)} leads by a reading taken apart: no move this pass")
-            return false
-        }
         val p = byGuid[target]?.let { pullLocked(it, "w") }
         if (p != null && !p.carries) {                            // the candidate answers but carries nothing (2.1.2): no move, the candidate held as failed
             LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(target)} answers but carries nothing: no move")
