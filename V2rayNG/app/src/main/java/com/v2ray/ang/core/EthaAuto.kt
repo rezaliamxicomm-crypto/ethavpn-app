@@ -76,8 +76,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  *     HEAD still passed (s: a line the network has soft-killed answers a HEAD and carries nothing — until 2.1.1 that was a
  *     "false alarm" and a minute's rest on the dead line), on a candidate before any switch (w), and on the line in use when
  *     a fetch brings the box's word that it is dead for this network (h: the phone's own evidence wins — a line that carries
- *     stays); never in the trickle; at most pullCapPerHour an hour; every pull goes into the next report (p=); a pull that
- *     fails condemns the line like a failed probe;
+ *     stays); never in the trickle; at most pullCapPerHour an hour; every pull goes into the next report (p=). A pull whose
+ *     bytes stop, or that gets no answer, condemns the line like a failed probe; one that runs out of its window with bytes
+ *     still coming is a slow line that carries — never condemned for its speed, but the best alternative is pulled at once
+ *     and takes over when it carries every byte within the window (a slow alternative leaves things as they are);
  *   - the box's word that the subscription ended (a signed 403 on a fetch, onExpired): nothing is probed or fetched until
  *     a fetch answers again (Home refreshes; a renewal is the same link), the state says "expired".
  *
@@ -430,16 +432,18 @@ class EthaAuto(
         if (!curDead && (out[cur.guid] ?: -1L) > 0) {
             // the line in use answers its HEAD; after a stall that is not the whole story — a line the network has soft-killed answers
             // a HEAD and carries nothing (2.1.2): the pull is the second opinion, and only a pull that fails lets the failover go on
-            if (reason != "stall" || pullLocked(cur, "s") != false) {
+            val p = if (reason == "stall") pullLocked(cur, "s") else null
+            if (reason != "stall" || p == null || p.carries) {
                 stallQuietUntil = mono() + STALL_FALSE_ALARM_REST_MS
                 LogUtil.i(AppConfig.TAG, "Auto: ${nameOf(current)} answers within ${policy.failoverMs} ms ($reason): staying")
+                if (p?.endLetter == "w") slowEscapeLocked("slow under a stall")   // it carries, slowly: a faster line may take over
                 return
             }
             curDead = true
             LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(current)} answers but carries nothing: the stall is real")
         }
         if (alt != null && (out[alt.guid] ?: -1L) > 0) {
-            if (pullLocked(alt, "w") == false) {                // the candidate answers but carries nothing (2.1.2): not it, the next one
+            if (pullLocked(alt, "w")?.carries == false) {       // the candidate answers but carries nothing (2.1.2): not it, the next one
                 condemn(alt.guid)
                 if (attempt < 2) { failoverLocked(reason, tried + labels.getValue(alt.guid), attempt + 1, currentFailed = curDead); return }
                 condemn(cur.guid)
@@ -599,9 +603,10 @@ class EthaAuto(
         val candidates = lines.map { AutoDecision.Candidate(it.guid, results[it.guid] ?: 0L, it.order) }
         val cur = candidates.firstOrNull { it.id == current } ?: return false
         val target = decision.target(mono(), phase, cur, candidates, policy) ?: return false
-        if (byGuid[target]?.let { pullLocked(it, "w") } == false) {   // the candidate answers but carries nothing (2.1.2): no move, the candidate held as failed
+        if (byGuid[target]?.let { pullLocked(it, "w") }?.carries == false) {   // the candidate answers but carries nothing (2.1.2): no move, the candidate held as failed
             LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(target)} answers but carries nothing: no move")
             condemn(target)
+            if (phase == AutoDecision.Phase.FIRST) decision.firstSwitchDone = false   // the first pass's one correction is not spent on it
             return false
         }
         return switchTo(target, reason, notify)
@@ -617,10 +622,11 @@ class EthaAuto(
         return pullTimes.size < policy.pullCapPerHour
     }
 
-    /** pullKb KB of the box's blob through the line (the core library's PullVia, a Range request): true when every byte came, false
-     *  when the line answers but carries nothing — or too slowly (pullWinSec) —, null when no pull was made (the budget spent, the pull
-     *  off, the core down). Every pull goes into the next report. Under the mutex: the window is bounded, the tick waits. */
-    private fun pullLocked(line: Line, why: String): Boolean? {
+    /** pullKb KB of the box's blob through the line (the core library's PullVia, a Range request): true when the line carries — every
+     *  byte came, or the window (pullWinSec) ran out with bytes still coming: slow, never condemned for its speed —, false when it answers
+     *  but carries nothing — the bytes stopped for stallSec, or nothing came at all —, null when no pull was made (the budget spent, the
+     *  pull off, the core down). Every pull goes into the next report. Under the mutex: the window is bounded, the tick waits. */
+    private fun pullLocked(line: Line, why: String): EthaReport.Pull? {
         val now = mono()
         if (stopped || !pullAllowed(now)) return null
         pullTimes.addLast(now)
@@ -630,15 +636,45 @@ class EthaAuto(
             LogUtil.e(AppConfig.TAG, "Auto: the pull failed", e)
             return null
         }
-        val (got, ms) = parsePull(raw) ?: return null
-        val ok = got >= policy.pullKb
+        val (got, ms, end) = parsePull(raw) ?: return null
+        val pull = EthaReport.Pull(labels.getValue(line.guid), got.toInt(), policy.pullKb, ms, why, end)
         synchronized(pulls) {
-            pulls.add(EthaReport.Pull(labels.getValue(line.guid), got.toInt(), policy.pullKb, ms, why))
+            pulls.add(pull)
             while (pulls.size > EthaReport.MAX_PULLS) pulls.removeAt(0)
         }
         lastPull = line.guid to now
-        LogUtil.i(AppConfig.TAG, "Auto: pulled $got of ${policy.pullKb} KB through ${nameOf(line.guid)} in $ms ms ($why): " + if (ok) "it carries" else "it answers but carries nothing")
-        return ok
+        LogUtil.i(AppConfig.TAG, "Auto: pulled $got of ${policy.pullKb} KB through ${nameOf(line.guid)} in $ms ms ($why): " + when (pull.endLetter) {
+            "f" -> "it carries"
+            "w" -> if (got > 0) "slow, but it carries" else "nothing came in the window"
+            "i" -> "the bytes stopped: it answers but carries nothing"
+            else -> "no answer"
+        })
+        return pull
+    }
+
+    /** The line in use carries, but slowly — its pull ran out of its window with bytes still coming: the best alternative is pulled at
+     *  once, and new connections move only to a line that proves faster, every byte within the window. A slow or dead alternative leaves
+     *  things as they are: a slow network is nobody's fault, and churning through the lines would only hurt (2.1.2). */
+    private fun slowEscapeLocked(reason: String) {
+        val mine = labels.getValue(current)
+        val all = lines.map { labels.getValue(it.guid) }
+        val advice = hint
+        val altLabel = health.bestKnown(all, except = mine)
+            ?: (advice?.arrange(all) ?: all).firstOrNull { it != mine && !health.isDead(it) && (advice == null || it !in advice.dead) }
+            ?: return
+        val alt = byLabel[altLabel]?.let { byGuid[it] } ?: return
+        val p = pullLocked(alt, "w") ?: return
+        when {
+            p.endLetter == "f" -> {
+                LogUtil.i(AppConfig.TAG, "Auto: ${nameOf(alt.guid)} carries every byte within the window where ${nameOf(current)} was slow ($reason): moving")
+                switchTo(alt.guid, "faster than ${nameOf(current)}")
+                decision.moved(mono())
+                report("auto", true)
+                saveHealth()
+            }
+            !p.carries -> condemn(alt.guid)
+            else -> LogUtil.i(AppConfig.TAG, "Auto: ${nameOf(alt.guid)} is slow too ($reason): staying on ${nameOf(current)} — a slow network")
+        }
     }
 
     /** Connect: the line the first pass picked is pulled once — a line pulled on its way in (the first pass's correction) is not pulled
@@ -647,10 +683,13 @@ class EthaAuto(
         val cur = byGuid[current] ?: return
         val lp = lastPull
         if (lp != null && lp.first == current && mono() - lp.second < PULL_FRESH_MS) return
-        if (pullLocked(cur, "c") == false) {
+        val p = pullLocked(cur, "c") ?: return
+        if (!p.carries) {
             LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(current)} answers but carries nothing right after Connect: leaving it")
             condemn(current)
             failoverLocked("pull", currentFailed = true)
+        } else if (p.endLetter == "w") {
+            slowEscapeLocked("slow right after Connect")
         }
     }
 
@@ -680,14 +719,13 @@ class EthaAuto(
         val cur = byGuid[current] ?: return
         val all = lines.map { labels.getValue(it.guid) }
         if (all.none { it != mine && !health.isDead(it) && it !in advice.dead }) return   // nowhere better to go
-        when (pullLocked(cur, "h")) {
-            false -> {
-                LogUtil.w(AppConfig.TAG, "Auto: the box calls ${nameOf(current)} dead on this network and it carries nothing: leaving it")
-                condemn(current)
-                failoverLocked("hint", currentFailed = true)
-            }
-            true -> LogUtil.i(AppConfig.TAG, "Auto: the box calls ${nameOf(current)} dead on this network but it carries: staying")
-            null -> {}
+        val p = pullLocked(cur, "h") ?: return
+        if (!p.carries) {
+            LogUtil.w(AppConfig.TAG, "Auto: the box calls ${nameOf(current)} dead on this network and it carries nothing: leaving it")
+            condemn(current)
+            failoverLocked("hint", currentFailed = true)
+        } else {
+            LogUtil.i(AppConfig.TAG, "Auto: the box calls ${nameOf(current)} dead on this network but it carries: staying")
         }
     }
 
@@ -869,13 +907,15 @@ class EthaAuto(
             return warm to (v.substring(slash + 1).toLongOrNull() ?: -1L)
         }
 
-        /** One result of the core library's PullVia: "got/ms" → (KB that came, ms); null when it is not one (the core down, an older library). */
-        fun parsePull(v: String): Pair<Long, Long>? {
-            val slash = v.indexOf('/')
-            if (slash <= 0) return null
-            val got = v.substring(0, slash).toLongOrNull() ?: return null
-            val ms = v.substring(slash + 1).toLongOrNull() ?: return null
-            return if (got < 0 || ms < 0) null else got to ms
+        /** One result of the core library's PullVia: "got/ms/end" → (KB that came, ms, how it ended: f | i | w | e, "" from a library
+         *  without it); null when it is not one (the core down). */
+        fun parsePull(v: String): Triple<Long, Long, String>? {
+            val parts = v.split('/')
+            if (parts.size < 2) return null
+            val got = parts[0].toLongOrNull() ?: return null
+            val ms = parts[1].toLongOrNull() ?: return null
+            val end = parts.getOrNull(2)?.trim()?.take(1).orEmpty()
+            return if (got < 0 || ms < 0 || (end.isNotEmpty() && end !in "fiwe")) null else Triple(got, ms, end)
         }
 
         /** The usable lines among guids, tagged as getV2rayConfigForLines tags them (the same filter, the same order). */

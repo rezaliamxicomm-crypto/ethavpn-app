@@ -29,10 +29,14 @@ class EthaReportTest {
     @Test
     fun thePullsRideAfterTheConnectTimes() {
         val h = EthaReport.build(1_761_770_000_000L, "stall", "EthaVPN-REALITY-relay-FRA9-443", false, listOf("EthaVPN-REALITY-relay-FRA9-443" to 160L),
-            pulls = listOf(EthaReport.Pull("REALITY-relay-FRA9-443", 128, 128, 940, "c"), EthaReport.Pull("REALITY-relay-FRA3-443", 12, 128, 5000, "s"),
-                           EthaReport.Pull("bad label", 1, 1, 1, "w"), EthaReport.Pull("REALITY-relay-FRA5-443", -3, 64, 10, "")))
+            pulls = listOf(EthaReport.Pull("REALITY-relay-FRA9-443", 128, 128, 940, "c", "f"), EthaReport.Pull("REALITY-relay-FRA3-443", 12, 128, 5000, "s", "i"),
+                           EthaReport.Pull("bad label", 1, 1, 1, "w"), EthaReport.Pull("REALITY-relay-FRA5-443", -3, 64, 10, ""),
+                           EthaReport.Pull("REALITY-relay-FRA1-443", 90, 128, 15000, "h", "w"), EthaReport.Pull("REALITY-relay-FRA2-443", 64, 64, 300, "c")))
         assertEquals("v=1;t=1761770000;trig=stall;use=REALITY-relay-FRA9-443;sw=0;l=REALITY-relay-FRA9-443:160;" +
-            "p=REALITY-relay-FRA9-443:128/128/940/c,REALITY-relay-FRA3-443:12/128/5000/s,REALITY-relay-FRA5-443:0/64/10/o", h)
+            "p=REALITY-relay-FRA9-443:128/128/940/c/f,REALITY-relay-FRA3-443:12/128/5000/s/i,REALITY-relay-FRA5-443:0/64/10/o/i," +
+            "REALITY-relay-FRA1-443:90/128/15000/h/w,REALITY-relay-FRA2-443:64/64/300/c/f", h)
+        assertTrue(EthaReport.Pull("x", 128, 128, 1, "c", "f").carries && EthaReport.Pull("x", 90, 128, 1, "c", "w").carries && EthaReport.Pull("x", 64, 64, 1, "c").carries)
+        assertTrue(!EthaReport.Pull("x", 12, 128, 1, "c", "i").carries && !EthaReport.Pull("x", 0, 128, 1, "c", "e").carries && !EthaReport.Pull("x", 0, 128, 1, "c", "w").carries && !EthaReport.Pull("x", 3, 16, 1, "c").carries)
         val many = (1..40).map { EthaReport.Pull("L$it-1-x-443", 1, 1, 1, "w") }
         val tail = EthaReport.build(0L, "auto", null, false, listOf("EthaVPN-A-1-x-443" to 5L), pulls = many)!!.substringAfter("p=").split(',')
         assertEquals(EthaReport.MAX_PULLS, tail.size)

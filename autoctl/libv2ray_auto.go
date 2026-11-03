@@ -314,17 +314,18 @@ func (x *CoreController) InboundTraffic(tag string) string {
 }
 
 // PullVia pulls wantKb KB of url through the outbound tag — a GET with a Range header for bytes 0 to wantKb*1024-1 — and
-// counts what arrives, never keeping it: "got/ms", got the KB that came (bytes / 1024), ms how long it took, or ran until
-// it ended — every byte in, or no byte for idleMs (the line answers but carries nothing), or winMs over (too slow), or a
-// status of 400 or more, or an error (0 KB). A got of wantKb is a line that carries. "" when the core is down. The body's
-// first byte must come within twice idleMs (the response-header window). Defaults: 128 KB, 15 s, 4 s.
+// counts what arrives, never keeping it: "got/ms/end", got the KB that came (bytes / 1024), ms how long it took, or ran
+// until it ended, end how it ended — f every byte came; i the bytes stopped (no byte for idleMs, after some or none: the
+// line answers but carries nothing), or the connection dropped before the end; w winMs ran out with bytes still coming (a
+// slow line, which carries); e no answer at all (the request failed, the headers never came — within twice idleMs —, a
+// status of 400 or more). A line carries when f, or w with bytes. "" when the core is down. Defaults: 128 KB, 15 s, 4 s.
 func (x *CoreController) PullVia(tag string, url string, wantKb int, winMs int, idleMs int) string {
 	inst := x.instance()
 	if inst == nil {
 		return ""
 	}
-	got, ms := pullVia(inst, tag, url, wantKb, winMs, idleMs)
-	return fmt.Sprintf("%d/%d", got, ms)
+	got, ms, end := pullVia(inst, tag, url, wantKb, winMs, idleMs)
+	return fmt.Sprintf("%d/%d/%s", got, ms, end)
 }
 
 // PullIn is PullVia through a throw-away core built from configContent (as MeasureOutboundsIn builds one).
@@ -334,8 +335,8 @@ func PullIn(configContent string, tag string, url string, wantKb int, winMs int,
 		return "", err
 	}
 	defer inst.Close()
-	got, ms := pullVia(inst, tag, url, wantKb, winMs, idleMs)
-	return fmt.Sprintf("%d/%d", got, ms), nil
+	got, ms, end := pullVia(inst, tag, url, wantKb, winMs, idleMs)
+	return fmt.Sprintf("%d/%d/%s", got, ms, end), nil
 }
 
 func throwawayCore(configContent string) (*core.Instance, error) {
@@ -364,7 +365,7 @@ func throwawayCore(configContent string) (*core.Instance, error) {
 	return inst, nil
 }
 
-func pullVia(inst *core.Instance, tag string, url string, wantKb int, winMs int, idleMs int) (int64, int64) {
+func pullVia(inst *core.Instance, tag string, url string, wantKb int, winMs int, idleMs int) (int64, int64, string) {
 	if wantKb <= 0 {
 		wantKb = 128
 	}
@@ -376,23 +377,24 @@ func pullVia(inst *core.Instance, tag string, url string, wantKb int, winMs int,
 	}
 	want := int64(wantKb) * 1024
 	idle := time.Duration(idleMs) * time.Millisecond
-	client, tr := probeClient(inst, tag, time.Duration(winMs)*time.Millisecond)
+	win := time.Duration(winMs) * time.Millisecond
+	client, tr := probeClient(inst, tag, win)
 	tr.ResponseHeaderTimeout = 2 * idle
 	defer tr.CloseIdleConnections()
 	start := time.Now()
 	elapsed := func() int64 { return time.Since(start).Milliseconds() }
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return 0, 0
+		return 0, 0, "e"
 	}
 	req.Header.Set("Range", fmt.Sprintf("bytes=0-%d", want-1))
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, elapsed()
+		return 0, elapsed(), "e"
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return 0, elapsed()
+		return 0, elapsed(), "e"
 	}
 	type chunk struct {
 		n   int
@@ -423,8 +425,15 @@ func pullVia(inst *core.Instance, tag string, url string, wantKb int, winMs int,
 		case c := <-ch:
 			got += int64(c.n)
 			if c.err != nil {
-				// the end of the body (the server sent what it had) or the connection dropped: what came is what counts
-				return min64(got, want) / 1024, elapsed()
+				// the end of the body, the window cutting a slow body (the client's timeout), or the connection dropped
+				switch {
+				case got >= want:
+					return want / 1024, elapsed(), "f"
+				case time.Since(start) >= win-250*time.Millisecond:
+					return got / 1024, elapsed(), "w"
+				default:
+					return got / 1024, elapsed(), "i"
+				}
 			}
 			if !timer.Stop() {
 				<-timer.C
@@ -432,17 +441,10 @@ func pullVia(inst *core.Instance, tag string, url string, wantKb int, winMs int,
 			timer.Reset(idle)
 		case <-timer.C:
 			// nothing for idleMs: the line answers but carries nothing (or no more)
-			return got / 1024, elapsed()
+			return got / 1024, elapsed(), "i"
 		}
 	}
-	return want / 1024, elapsed()
-}
-
-func min64(a, b int64) int64 {
-	if a < b {
-		return a
-	}
-	return b
+	return want / 1024, elapsed(), "f"
 }
 
 func counterValue(sm corestats.Manager, name string) int64 {

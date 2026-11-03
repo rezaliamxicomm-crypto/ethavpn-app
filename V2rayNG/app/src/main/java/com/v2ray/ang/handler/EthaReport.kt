@@ -4,14 +4,15 @@ package com.v2ray.ang.handler
  * What Auto measured, for the box: the header X-Etha-Lines on the next subscription fetch (the API stores it as one
  * row of line_reports; the panel shows it — the customer sees no line name). Pure; covered by JVM unit tests.
  *
- *     v=1;t=<epoch s>;trig=<connect|first|auto|failover|manual|network|search>;use=<label>;sw=<0|1>;r=<kbps>;l=<label>:<ms>,<label>:-1,…;c=<label>:<ms>,…;p=<label>:<got>/<want>/<ms>/<why>,…
+ *     v=1;t=<epoch s>;trig=<connect|first|auto|failover|manual|network|search>;use=<label>;sw=<0|1>;r=<kbps>;l=<label>:<ms>,<label>:-1,…;c=<label>:<ms>,…;p=<label>:<got>/<want>/<ms>/<why>/<end>,…
  *
  * `r` (2.1): the best five-second download rate seen on the line in use during the pass, in kbps, when any (the passive
  * throughput figure for the box's ranking; a latency probe cannot see a slow line). `c` (2.1.1): the connect time of each
  * line that was measured — its first request, handshakes and all — beside `l`'s warm round trip; only lines with one. `p` (2.1.2):
  * the pulls since the last report — `want` KB of the box's blob asked through the line, `got` the KB that came, `ms` how long it took
- * or ran, `why` c (at Connect) | s (a stall whose HEAD passed) | w (before a switch) | h (the box called the line dead); at most
- * MAX_PULLS, the newest kept.
+ * or ran, `why` c (at Connect) | s (a stall whose HEAD passed) | w (before a switch) | h (the box called the line dead), `end` how
+ * it ended — f every byte came, i the bytes stopped (no byte for the stall window: the line answers but carries nothing), w the
+ * window ran out with bytes still coming (slow, but carrying), e no answer at all; at most MAX_PULLS, the newest kept.
  *
  * A label is the line's name without its "EthaVPN-" prefix (REALITY-relay-FRA9-443, XHTTP-api-CleanIP1-443); a line
  * named otherwise is left out. ms -1 = no answer. The header stays under 4 KB (at most 64 lines).
@@ -21,8 +22,13 @@ object EthaReport {
     const val MAX_LINES = 64
     const val MAX_PULLS = 16
 
-    /** One pull (2.1.2): the line's label, the KB that came, the KB asked, the time, why. */
-    data class Pull(val label: String, val got: Int, val want: Int, val ms: Long, val why: String)
+    /** One pull (2.1.2): the line's label, the KB that came, the KB asked, the time, why, how it ended (f | i | w | e; "" = f when every
+     *  byte came, else i). */
+    data class Pull(val label: String, val got: Int, val want: Int, val ms: Long, val why: String, val end: String = "") {
+        /** The line carries: every byte came, or the window ran out with bytes still coming. */
+        val carries: Boolean get() = endLetter == "f" || (endLetter == "w" && got > 0)
+        val endLetter: String get() = end.take(1).ifEmpty { if (got >= want) "f" else "i" }
+    }
     private val LABEL = Regex("[A-Za-z0-9._-]{1,48}")
 
     /** The line's label for the box, or null when the line is not one of ours. */
@@ -54,7 +60,7 @@ object EthaReport {
         val rate = if (rateKbps > 0) ";r=$rateKbps" else ""
         val c = if (cold.isEmpty()) "" else ";c=${cold.joinToString(",")}"
         val p = pulls.filter { LABEL.matches(it.label) && it.want > 0 }.takeLast(MAX_PULLS)
-            .joinToString(",") { "${it.label}:${maxOf(0, it.got)}/${it.want}/${maxOf(0L, it.ms)}/${it.why.take(1).ifEmpty { "o" }}" }
+            .joinToString(",") { "${it.label}:${maxOf(0, it.got)}/${it.want}/${maxOf(0L, it.ms)}/${it.why.take(1).ifEmpty { "o" }}/${it.endLetter}" }
             .let { if (it.isEmpty()) "" else ";p=$it" }
         return "v=1;t=${nowMs / 1000};trig=$trigger;use=$use;sw=${if (switched) 1 else 0}$rate;l=${items.joinToString(",")}$c$p"
     }
