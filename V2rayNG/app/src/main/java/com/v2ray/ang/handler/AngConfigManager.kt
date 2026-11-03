@@ -532,8 +532,7 @@ object AngConfigManager {
      *  cannot come back (EthaAuto.onExpired), and the lines stay for the day the link is renewed — the same link. A failure to the caller. */
     private fun expired(it: SubscriptionCache): SubscriptionUpdateResult {
         LogUtil.w(AppConfig.TAG, "Subscription answered 403 with the box's word: expired")
-        it.subscription.expire = System.currentTimeMillis() / 1000 - 1
-        it.subscription.lastUpdated = System.currentTimeMillis()
+        it.subscription.expire = System.currentTimeMillis() / 1000 - 1    // not lastUpdated: the Home screen refreshes an ended card on every open, so a renewal is seen
         MmkvManager.encodeSubscription(it.guid, it.subscription)
         MessageUtil.sendMsg2Service(AngApplication.application, AppConfig.MSG_ETHA_EXPIRED, it.guid)
         return SubscriptionUpdateResult(failureCount = 1)

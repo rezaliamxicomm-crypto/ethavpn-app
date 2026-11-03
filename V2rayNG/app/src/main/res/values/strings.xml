@@ -576,6 +576,7 @@
     <string name="etha_state_searching">Searching for a line…</string>
     <string name="etha_state_expired">Subscription expired</string>
     <string name="etha_expired_short">Expired</string>
+    <string name="etha_expired_hint">Expired. Renew in the bot, then tap Refresh.</string>
     <string name="etha_no_answer_yet">No answer yet</string>
     <string name="etha_no_line_answers">No line answers</string>
     <string name="etha_searching_hint">Tap Refresh. Still nothing? Tap Support.</string>

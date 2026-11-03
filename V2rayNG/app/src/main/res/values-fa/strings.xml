@@ -552,6 +552,7 @@
     <string name="etha_state_searching">در جستجوی خط…</string>
     <string name="etha_state_expired">اشتراک تمام شده</string>
     <string name="etha_expired_short">منقضی</string>
+    <string name="etha_expired_hint">منقضی شده. در ربات تمدید کنید و سپس «بروزرسانی» را بزنید.</string>
     <string name="etha_no_answer_yet">هنوز جوابی نیامده</string>
     <string name="etha_no_line_answers">هیچ خطی جواب نمی‌دهد</string>
     <string name="etha_searching_hint">«بروزرسانی» را بزنید. باز هم نشد؟ «پشتیبانی» را بزنید.</string>

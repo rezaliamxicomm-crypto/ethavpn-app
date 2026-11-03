@@ -343,7 +343,7 @@ class HomeActivity : HelperBaseActivity() {
     private fun renderOutcome() {
         val running = mainViewModel.isRunning.value == true
         val text = when {
-            running && expired -> getString(R.string.etha_expired)
+            running && expired -> getString(R.string.etha_expired_hint)
             running && searching -> getString(if (outage) R.string.etha_lines_blocked else R.string.etha_searching_hint)   // the box's word when every phone of the network fails
             outcome != 0 -> getString(outcome)
             else -> ""
@@ -609,7 +609,8 @@ class HomeActivity : HelperBaseActivity() {
      */
     private fun refreshQuietlyIfStale() {
         val s = sub ?: return
-        if (!EthaSubscription.isStale(s.subscription.lastUpdated)) return
+        val ended = EthaSubscription.daysLeft(s.subscription.expire) == 0L   // an ended card is refreshed on every open: a renewal is the same link (2.1.2)
+        if (!ended && !EthaSubscription.isStale(s.subscription.lastUpdated)) return
         refreshQuietly()
     }
 

@@ -76,7 +76,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  *     HEAD still passed (s: a line the network has soft-killed answers a HEAD and carries nothing — until 2.1.1 that was a
  *     "false alarm" and a minute's rest on the dead line), on a candidate before any switch (w), and on the line in use when
  *     a fetch brings the box's word that it is dead for this network (h: the phone's own evidence wins — a line that carries
- *     stays); never in the trickle; at most pullCapPerHour an hour; every pull goes into the next report (p=). A pull whose
+ *     stays); never in the trickle; at most pullCapPerHour an hour; every pull rides the report header until a fetch has carried
+ *     it to the box (p=). A pull whose
  *     bytes stop, or that gets no answer, condemns the line like a failed probe; one that runs out of its window with bytes
  *     still coming is a slow line that carries — never condemned for its speed, but the best alternative is pulled at once
  *     and takes over when it carries every byte within the window (a slow alternative leaves things as they are);
@@ -138,8 +139,10 @@ class EthaAuto(
     private var searchSteps = 0
     private val fetching = AtomicBoolean(false)
     private val pullTimes = ArrayDeque<Long>()                   // when the pulls of the last hour were made: the budget (2.1.2)
-    private val pulls = ArrayList<EthaReport.Pull>()             // the pulls since the last report
-    @Volatile private var lastPull: Pair<String, Long>? = null   // the line last pulled, and when
+    private val pulls = ArrayList<EthaReport.Pull>()             // the pulls not yet carried to the box by a fetch
+    private var reportedPulls = 0                                // how many of them (the oldest) the stored report header carries
+    @Volatile private var lastPull: Triple<String, Long, Boolean>? = null   // the line last pulled, when, and whether it carried
+    private var connectPullDue = true                            // the Connect pull: once after Connect, once after a network change
     @Volatile private var expired = false                        // the box said the subscription ended: nothing to look for until a fetch answers again
     private var deadPulledFor: Hint? = null                      // the advice the line in use was last judged against (once per advice)
     private val subscriptionId = MmkvManager.decodeServerConfig(start)?.subscriptionId.orEmpty()
@@ -241,6 +244,7 @@ class EthaAuto(
         if (signature != network) {
             saveHealth()
             network = signature
+            connectPullDue = true                                 // the first impression on the new network (2.1.2)
             health = LineHealth.decode(MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_LINE_HEALTH + network))
             val all = lines.map { labels.getValue(it.guid) }
             if (health.isDead(labels.getValue(current))) {
@@ -467,8 +471,9 @@ class EthaAuto(
 
     /** The line failed for good within this session: its result and its memory say so (its retry backs off). */
     private fun condemn(guid: String) {
+        val again = results[guid] == -1L                         // already held as failed this episode: one failure on the memory, not two (2.1.2)
         results[guid] = -1L
-        health.failed(labels.getValue(guid), System.currentTimeMillis() / 1000, policy)
+        if (!again) health.failed(labels.getValue(guid), System.currentTimeMillis() / 1000, policy)
         synchronized(probedSinceReport) { probedSinceReport.add(guid) }
         if (guid == current) tellLatency()
     }
@@ -603,10 +608,15 @@ class EthaAuto(
         val candidates = lines.map { AutoDecision.Candidate(it.guid, results[it.guid] ?: 0L, it.order) }
         val cur = candidates.firstOrNull { it.id == current } ?: return false
         val target = decision.target(mono(), phase, cur, candidates, policy) ?: return false
-        if (byGuid[target]?.let { pullLocked(it, "w") }?.carries == false) {   // the candidate answers but carries nothing (2.1.2): no move, the candidate held as failed
+        val p = byGuid[target]?.let { pullLocked(it, "w") }
+        if (p != null && !p.carries) {                            // the candidate answers but carries nothing (2.1.2): no move, the candidate held as failed
             LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(target)} answers but carries nothing: no move")
             condemn(target)
             if (phase == AutoDecision.Phase.FIRST) decision.firstSwitchDone = false   // the first pass's one correction is not spent on it
+            return false
+        }
+        if (p != null && p.endLetter == "w") {                   // a slow line wins no move by its ping (it may be the one a slow escape just left)
+            LogUtil.i(AppConfig.TAG, "Auto: ${nameOf(target)} answers faster but carries slowly: no move")
             return false
         }
         return switchTo(target, reason, notify)
@@ -642,7 +652,7 @@ class EthaAuto(
             pulls.add(pull)
             while (pulls.size > EthaReport.MAX_PULLS) pulls.removeAt(0)
         }
-        lastPull = line.guid to now
+        lastPull = Triple(line.guid, now, pull.carries)
         LogUtil.i(AppConfig.TAG, "Auto: pulled $got of ${policy.pullKb} KB through ${nameOf(line.guid)} in $ms ms ($why): " + when (pull.endLetter) {
             "f" -> "it carries"
             "w" -> if (got > 0) "slow, but it carries" else "nothing came in the window"
@@ -680,6 +690,8 @@ class EthaAuto(
     /** Connect: the line the first pass picked is pulled once — a line pulled on its way in (the first pass's correction) is not pulled
      *  again; one that carries nothing is left for the best alternative, which is pulled before the move. */
     private fun connectPullLocked() {
+        if (!connectPullDue) return                               // a wake runs the first pass again; the pull is once per Connect and per network change
+        connectPullDue = false
         val cur = byGuid[current] ?: return
         val lp = lastPull
         if (lp != null && lp.first == current && mono() - lp.second < PULL_FRESH_MS) return
@@ -702,6 +714,10 @@ class EthaAuto(
     }
 
     private fun fetchedLocked() {
+        if (MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_LINE_REPORT).isNullOrEmpty()) {   // the fetch spent the header: the pulls it carried are delivered
+            synchronized(pulls) { pulls.subList(0, minOf(reportedPulls, pulls.size)).clear() }
+            reportedPulls = 0
+        }
         if (expired) {
             expired = false
             LogUtil.i(AppConfig.TAG, "Auto: the link answers again: the subscription is back")
@@ -716,6 +732,8 @@ class EthaAuto(
         val mine = labels.getValue(current)
         if (mine !in advice.dead || (advice == before && deadPulledFor == advice)) return
         deadPulledFor = advice
+        val lp = lastPull
+        if (lp != null && lp.first == current && mono() - lp.second < PULL_FRESH_MS) return   // judged seconds ago (a failover's fetch follows its pull)
         val cur = byGuid[current] ?: return
         val all = lines.map { labels.getValue(it.guid) }
         if (all.none { it != mine && !health.isDead(it) && it !in advice.dead }) return   // nowhere better to go
@@ -771,7 +789,7 @@ class EthaAuto(
         if (header != null) {
             MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, header)
             synchronized(probedSinceReport) { probedSinceReport.clear() }
-            synchronized(pulls) { pulls.subList(0, minOf(pulled.size, pulls.size)).clear() }   // the pulls the report carries; a pull made meanwhile stays for the next
+            reportedPulls = pulled.size                           // the header is replaced at every pass end: the pulls stay until a fetch has carried one (fetchedLocked)
         }
     }
 
