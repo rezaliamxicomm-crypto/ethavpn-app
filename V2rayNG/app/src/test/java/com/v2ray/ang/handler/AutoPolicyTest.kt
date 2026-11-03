@@ -7,6 +7,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AutoPolicyTest {
+    @Test
+    fun thePullKeysAreParsedAndClamped() {
+        val q = AutoPolicy.parse("pull=96,pullcap=100,pullwin=3")
+        assertEquals(96, q.pullKb); assertEquals(60, q.pullCapPerHour); assertEquals(5, q.pullWinSec)
+        assertEquals(0, AutoPolicy.parse("pull=0").pullKb)
+        assertEquals(256, AutoPolicy.parse("pull=999").pullKb)
+        assertEquals(128, AutoPolicy.DEFAULT.pullKb); assertEquals(6, AutoPolicy.DEFAULT.pullCapPerHour); assertEquals(15, AutoPolicy.DEFAULT.pullWinSec)
+        assertEquals(15_000L, AutoPolicy.DEFAULT.pullWinMs); assertEquals(4_000L, AutoPolicy.DEFAULT.stallMs)
+    }
+
     private val p = AutoPolicy()
     private fun c(guid: String, delay: Long, order: Int) = AutoSelect.Candidate(guid, delay, order)
 

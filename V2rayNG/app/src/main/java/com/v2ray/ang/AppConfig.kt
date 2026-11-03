@@ -148,6 +148,9 @@ object AppConfig {
     const val ETHA_PROBE_URL = "http://203.0.113.1/"
     const val ETHA_PROBE_FALLBACK_URL = "https://www.gstatic.com/generate_204"
     const val ETHA_LINES_HEADER = "X-Etha-Lines"              // what Auto measured, on the next fetch (EthaReport); the box stores it
+    const val ETHA_DEVICE_HEADER = "X-Etha-Device"            // this phone as a code on every fetch of our link (EthaDevice: a hash, never the id); the box counts the phones a link is on (2.1.2)
+    const val ETHA_CARRIER_HEADER = "X-Etha-Carrier"          // the SIM's MCC-MNC on mobile data (EthaNetwork.carrier): the phone's network when its fetch's address says nothing (2.1.2)
+    const val ETHA_PULL_URL = "http://203.0.113.1/blob/256k"  // the pull (2.1.2): a Range of the box's blob through one line, the bytes counted — the second opinion a HEAD cannot give
     // Our own link is fetched with Encrypted Client Hello enforced (EthaEchFetch → the core's FetchSubscriptionEch,
     // echfetch/ in this repo), on the phone's own network and then through the tunnel; only when nobody answered on
     // either way is it fetched once more without ECH, the last resort (AngConfigManager.updateConfigViaSub). The ECH key (Cloudflare's configuration, one for every zone) is asked over plain
@@ -278,6 +281,8 @@ object AppConfig {
     const val MSG_ETHA_LATENCY = 85         // service → UI: the line in use was measured (content: ms, -1 failed)
     const val MSG_ETHA_STATE = 86           // service → UI: "searching" (no line answers; Auto keeps trying), "outage" (the same, and the box says the network blocks every line) or "ok"
     const val MSG_ETHA_WATCH = 87           // UI → service: the Home screen is showing the chip; the line in use is kept fresh for it (every 10 s while shown)
+    const val MSG_ETHA_FETCHED = 88         // app → service: our link answered (content: the subscription's guid); the engine reads the fresh advice (2.1.2)
+    const val MSG_ETHA_EXPIRED = 89         // app → service: the box said the subscription ended, a signed 403 (content: its guid); the engine stops looking (2.1.2)
 
     /** Notification channel IDs and names. */
     const val RAY_NG_CHANNEL_ID = "RAY_NG_M_CH_ID"

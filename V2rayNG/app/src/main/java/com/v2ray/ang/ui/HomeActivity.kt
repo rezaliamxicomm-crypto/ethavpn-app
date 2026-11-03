@@ -82,6 +82,7 @@ class HomeActivity : HelperBaseActivity() {
     private var testing = false           // Test latency is running: the button is busy, the chip says so
     private var searching = false         // Auto found no line answering (the service's state)
     private var outage = false            // …and the box says this network blocks every line right now (the hint's word): the text says so
+    private var expired = false           // the box said the subscription ended (the service's state, 2.1.2): Expired, and Renew is the way
     private var latencyMs = 0L            // the line in use's last time: ms, -1 failed, 0 none yet
     private var latencyAt = 0L
     private var outcome = 0               // the string under the buttons after a test, 0 = none
@@ -134,7 +135,7 @@ class HomeActivity : HelperBaseActivity() {
             rateOnLatency = running && connecting   // the customer's own Connect, not the state found on opening
             connecting = false
             if (!running) {
-                searching = false; outage = false; testing = false; latencyMs = 0L; latencyAt = 0L; outcome = 0
+                searching = false; outage = false; expired = false; testing = false; latencyMs = 0L; latencyAt = 0L; outcome = 0
             }
             render()
         }
@@ -150,6 +151,7 @@ class HomeActivity : HelperBaseActivity() {
         mainViewModel.autoState.observe(this) { state ->
             searching = state == "searching" || state == "outage"
             outage = state == "outage"
+            expired = state == "expired"
             if (searching) outcome = 0
             render()
         }
@@ -256,6 +258,7 @@ class HomeActivity : HelperBaseActivity() {
         binding.tvState.text = getString(
             when {
                 connecting -> R.string.etha_state_connecting
+                running && expired -> R.string.etha_state_expired
                 running && searching -> R.string.etha_state_searching
                 running -> R.string.etha_state_connected
                 else -> R.string.etha_state_not_connected
@@ -268,6 +271,7 @@ class HomeActivity : HelperBaseActivity() {
         binding.tvConnectHint.text = getString(R.string.etha_tap_to_connect) + "\n" + getString(R.string.etha_auto_hint)
         binding.btnConnect.isEnabled = !connecting
         val disc = when {
+            running && expired -> R.color.etha_red
             running && searching -> R.color.etha_amber
             running -> R.color.etha_green
             else -> R.color.etha_blue
@@ -275,7 +279,7 @@ class HomeActivity : HelperBaseActivity() {
         binding.btnConnect.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, disc))
         binding.halo.setBackgroundResource(
             when {
-                running && searching -> R.drawable.bg_halo_amber
+                running && (searching || expired) -> R.drawable.bg_halo_amber
                 running -> R.drawable.bg_halo_green
                 else -> R.drawable.bg_halo_blue
             }
@@ -314,6 +318,7 @@ class HomeActivity : HelperBaseActivity() {
         }
         when {
             testing -> styleChip(chip, red = false, text = getString(R.string.etha_testing))
+            expired -> styleChip(chip, red = true, text = getString(R.string.etha_expired_short))
             searching -> styleChip(chip, red = true, text = getString(R.string.etha_no_line_answers) + " · " + ago(latencyAt))
             latencyAt == 0L -> styleChip(chip, red = false, text = getString(R.string.etha_state_connecting))   // the first measurement is on its way
             latencyMs > 0 -> styleChip(chip, red = false, text = "$latencyMs ms · " + ago(latencyAt))
@@ -338,6 +343,7 @@ class HomeActivity : HelperBaseActivity() {
     private fun renderOutcome() {
         val running = mainViewModel.isRunning.value == true
         val text = when {
+            running && expired -> getString(R.string.etha_expired)
             running && searching -> getString(if (outage) R.string.etha_lines_blocked else R.string.etha_searching_hint)   // the box's word when every phone of the network fails
             outcome != 0 -> getString(outcome)
             else -> ""

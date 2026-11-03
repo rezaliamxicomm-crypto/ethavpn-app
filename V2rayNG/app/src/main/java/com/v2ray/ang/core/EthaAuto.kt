@@ -71,6 +71,16 @@ import java.util.concurrent.atomic.AtomicBoolean
  *     the next fetch carries to the box (EthaReport, the header X-Etha-Lines) with the best five-second download rate seen
  *     on the line in use during the pass — the passive throughput figure the box's ranking folds in.
  *
+ *   - the pull (2.1.2): a line is judged by bytes where a ping would lie — pullKb KB of the box's blob through the line (the
+ *     core library's PullVia), at Connect on the line the first pass picked (c), when the stall watch fired and the line's
+ *     HEAD still passed (s: a line the network has soft-killed answers a HEAD and carries nothing — until 2.1.1 that was a
+ *     "false alarm" and a minute's rest on the dead line), on a candidate before any switch (w), and on the line in use when
+ *     a fetch brings the box's word that it is dead for this network (h: the phone's own evidence wins — a line that carries
+ *     stays); never in the trickle; at most pullCapPerHour an hour; every pull goes into the next report (p=); a pull that
+ *     fails condemns the line like a failed probe;
+ *   - the box's word that the subscription ended (a signed 403 on a fetch, onExpired): nothing is probed or fetched until
+ *     a fetch answers again (Home refreshes; a renewal is the same link), the state says "expired".
+ *
  * Nobody picks a line by hand any more (2.0.0): the customer sees no line name, only the latency. Every decision runs
  * under one mutex (the tick, a manual test, a network change); the connectivity thread only posts into the engine's scope.
  */
@@ -125,6 +135,12 @@ class EthaAuto(
     private var probesThisPass = 0
     private var searchSteps = 0
     private val fetching = AtomicBoolean(false)
+    private val pullTimes = ArrayDeque<Long>()                   // when the pulls of the last hour were made: the budget (2.1.2)
+    private val pulls = ArrayList<EthaReport.Pull>()             // the pulls since the last report
+    @Volatile private var lastPull: Pair<String, Long>? = null   // the line last pulled, and when
+    @Volatile private var expired = false                        // the box said the subscription ended: nothing to look for until a fetch answers again
+    private var deadPulledFor: Hint? = null                      // the advice the line in use was last judged against (once per advice)
+    private val subscriptionId = MmkvManager.decodeServerConfig(start)?.subscriptionId.orEmpty()
 
     fun start() {
         val all = lines.map { labels.getValue(it.guid) }
@@ -253,6 +269,7 @@ class EthaAuto(
     }
 
     private fun tickLocked(now: Long) {
+        if (expired) return                                     // nothing to look for until the link answers again (2.1.2)
         val stalled = synchronized(samples) { policy.stalled(samples.toList(), System.currentTimeMillis()) }
         if (stalled && !searching && now >= stallQuietUntil) {
             stallQuietUntil = now + STALL_PROBE_GAP_MS
@@ -359,6 +376,7 @@ class EthaAuto(
      *  rate window, the memory saved. */
     private fun passEnded(first: Boolean) {
         if (!first && decide(AutoDecision.Phase.PASS_END, "pass end", notify = true)) movedInPass = true
+        if (first) connectPullLocked()
         report(if (first) "first" else "auto", movedInPass)
         movedInPass = false
         passRateKbps = 0
@@ -392,8 +410,9 @@ class EthaAuto(
      *  line in use answering: nothing moves, the alarm rests a minute. It failing and the alternative answering: new
      *  connections move at once, and only then is the old line held as failed. The alternative failing too: the next, once
      *  more; nothing answering: Searching. The short window itself condemns nobody — answers are kept, failures not. */
-    private fun failoverLocked(reason: String, tried: Set<String> = emptySet(), attempt: Int = 1) {
+    private fun failoverLocked(reason: String, tried: Set<String> = emptySet(), attempt: Int = 1, currentFailed: Boolean = false) {
         val cur = byGuid[current] ?: return
+        var curDead = currentFailed                           // the line in use already known not to carry (a failed pull): not probed again
         val all = lines.map { labels.getValue(it.guid) }
         val mine = labels.getValue(current)
         val excluded = tried + mine
@@ -403,16 +422,30 @@ class EthaAuto(
             ?: arranged.firstOrNull { it !in excluded && !health.isDead(it) && (advice == null || it !in advice.dead) }
             ?: arranged.firstOrNull { it !in excluded }
         val alt = altLabel?.let { byLabel[it] }?.let { byGuid[it] }
-        val which = listOfNotNull(cur, alt)
+        val which = if (curDead) listOfNotNull(alt) else listOfNotNull(cur, alt)
+        if (which.isEmpty()) { condemn(cur.guid); updateSearchingLocked(force = true); return }
         val out = measureOnce(which, which.size, if (schedule.fallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, policy.failoverMs.toLong())
         if (out.isEmpty()) return
         record(out, which, condemn = false)                     // a 1.5-s window: answers count, failures do not
-        if ((out[cur.guid] ?: -1L) > 0) {
-            stallQuietUntil = mono() + STALL_FALSE_ALARM_REST_MS
-            LogUtil.i(AppConfig.TAG, "Auto: ${nameOf(current)} answers within ${policy.failoverMs} ms ($reason): staying")
-            return
+        if (!curDead && (out[cur.guid] ?: -1L) > 0) {
+            // the line in use answers its HEAD; after a stall that is not the whole story — a line the network has soft-killed answers
+            // a HEAD and carries nothing (2.1.2): the pull is the second opinion, and only a pull that fails lets the failover go on
+            if (reason != "stall" || pullLocked(cur, "s") != false) {
+                stallQuietUntil = mono() + STALL_FALSE_ALARM_REST_MS
+                LogUtil.i(AppConfig.TAG, "Auto: ${nameOf(current)} answers within ${policy.failoverMs} ms ($reason): staying")
+                return
+            }
+            curDead = true
+            LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(current)} answers but carries nothing: the stall is real")
         }
         if (alt != null && (out[alt.guid] ?: -1L) > 0) {
+            if (pullLocked(alt, "w") == false) {                // the candidate answers but carries nothing (2.1.2): not it, the next one
+                condemn(alt.guid)
+                if (attempt < 2) { failoverLocked(reason, tried + labels.getValue(alt.guid), attempt + 1, currentFailed = curDead); return }
+                condemn(cur.guid)
+                updateSearchingLocked(force = true)
+                return
+            }
             condemn(cur.guid)
             switchTo(alt.guid, "failover after $reason")
             decision.moved(mono())
@@ -422,7 +455,7 @@ class EthaAuto(
             return
         }
         val next = if (alt != null) tried + labels.getValue(alt.guid) else tried
-        if (attempt < 2 && alt != null) { failoverLocked(reason, next, attempt + 1); return }
+        if (attempt < 2 && alt != null) { failoverLocked(reason, next, attempt + 1, currentFailed = curDead); return }
         // nothing answered the line in use nor two alternatives: the line in use is held as failed and Searching decides
         condemn(cur.guid)
         updateSearchingLocked(force = true)
@@ -566,7 +599,110 @@ class EthaAuto(
         val candidates = lines.map { AutoDecision.Candidate(it.guid, results[it.guid] ?: 0L, it.order) }
         val cur = candidates.firstOrNull { it.id == current } ?: return false
         val target = decision.target(mono(), phase, cur, candidates, policy) ?: return false
+        if (byGuid[target]?.let { pullLocked(it, "w") } == false) {   // the candidate answers but carries nothing (2.1.2): no move, the candidate held as failed
+            LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(target)} answers but carries nothing: no move")
+            condemn(target)
+            return false
+        }
         return switchTo(target, reason, notify)
+    }
+
+    // ---------------------------------------------------------------- the pull (2.1.2)
+
+    /** The budget: at most pullCapPerHour pulls in any hour; none while the policy says 0 or the probes run against the fallback
+     *  (the blob is the box's). */
+    private fun pullAllowed(now: Long): Boolean {
+        if (policy.pullKb <= 0 || policy.pullCapPerHour <= 0 || schedule.fallback) return false
+        while (pullTimes.isNotEmpty() && now - pullTimes.first() > PULL_HOUR_MS) pullTimes.removeFirst()
+        return pullTimes.size < policy.pullCapPerHour
+    }
+
+    /** pullKb KB of the box's blob through the line (the core library's PullVia, a Range request): true when every byte came, false
+     *  when the line answers but carries nothing — or too slowly (pullWinSec) —, null when no pull was made (the budget spent, the pull
+     *  off, the core down). Every pull goes into the next report. Under the mutex: the window is bounded, the tick waits. */
+    private fun pullLocked(line: Line, why: String): Boolean? {
+        val now = mono()
+        if (stopped || !pullAllowed(now)) return null
+        pullTimes.addLast(now)
+        val raw = try {
+            controller.pullVia(line.tag, AppConfig.ETHA_PULL_URL, policy.pullKb.toLong(), policy.pullWinMs, policy.stallMs)
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "Auto: the pull failed", e)
+            return null
+        }
+        val (got, ms) = parsePull(raw) ?: return null
+        val ok = got >= policy.pullKb
+        synchronized(pulls) {
+            pulls.add(EthaReport.Pull(labels.getValue(line.guid), got.toInt(), policy.pullKb, ms, why))
+            while (pulls.size > EthaReport.MAX_PULLS) pulls.removeAt(0)
+        }
+        lastPull = line.guid to now
+        LogUtil.i(AppConfig.TAG, "Auto: pulled $got of ${policy.pullKb} KB through ${nameOf(line.guid)} in $ms ms ($why): " + if (ok) "it carries" else "it answers but carries nothing")
+        return ok
+    }
+
+    /** Connect: the line the first pass picked is pulled once — a line pulled on its way in (the first pass's correction) is not pulled
+     *  again; one that carries nothing is left for the best alternative, which is pulled before the move. */
+    private fun connectPullLocked() {
+        val cur = byGuid[current] ?: return
+        val lp = lastPull
+        if (lp != null && lp.first == current && mono() - lp.second < PULL_FRESH_MS) return
+        if (pullLocked(cur, "c") == false) {
+            LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(current)} answers but carries nothing right after Connect: leaving it")
+            condemn(current)
+            failoverLocked("pull", currentFailed = true)
+        }
+    }
+
+    /** Our link answered (the app's fetch, from the Home screen, the hourly job or the engine's own): the box's advice is fresh. The
+     *  line in use the box now calls dead for this network is pulled — the phone's own evidence wins: a line that carries stays — and
+     *  left for a live one when it carries nothing; a subscription the box had called ended is back. [subId]: whose fetch. */
+    fun onFetched(subId: String) {
+        if (subId.isNotEmpty() && subId != subscriptionId) return
+        scope.launch { measuring.withLock { if (!stopped) fetchedLocked() } }
+    }
+
+    private fun fetchedLocked() {
+        if (expired) {
+            expired = false
+            LogUtil.i(AppConfig.TAG, "Auto: the link answers again: the subscription is back")
+            schedule.freshen(mono(), order())
+            probesThisPass = 0
+            announceState()
+        }
+        val before = hint
+        refreshHint()
+        val advice = hint ?: return
+        if (searching || schedule.fallback) return
+        val mine = labels.getValue(current)
+        if (mine !in advice.dead || (advice == before && deadPulledFor == advice)) return
+        deadPulledFor = advice
+        val cur = byGuid[current] ?: return
+        val all = lines.map { labels.getValue(it.guid) }
+        if (all.none { it != mine && !health.isDead(it) && it !in advice.dead }) return   // nowhere better to go
+        when (pullLocked(cur, "h")) {
+            false -> {
+                LogUtil.w(AppConfig.TAG, "Auto: the box calls ${nameOf(current)} dead on this network and it carries nothing: leaving it")
+                condemn(current)
+                failoverLocked("hint", currentFailed = true)
+            }
+            true -> LogUtil.i(AppConfig.TAG, "Auto: the box calls ${nameOf(current)} dead on this network but it carries: staying")
+            null -> {}
+        }
+    }
+
+    /** The box's word that the subscription ended (a signed 403 on a fetch of our link): nothing is probed or fetched until a fetch
+     *  answers again (the Home screen refreshes on its own; a renewal is the same link); the state says so. [subId]: whose. */
+    fun onExpired(subId: String) {
+        if (subId.isNotEmpty() && subId != subscriptionId) return
+        scope.launch {
+            measuring.withLock {
+                if (stopped || expired) return@withLock
+                expired = true
+                LogUtil.w(AppConfig.TAG, "Auto: the box says the subscription ended; nothing to look for until the link answers again")
+                announceState()
+            }
+        }
     }
 
     /** The line in use's time to the UI: the chip's number. */
@@ -580,7 +716,7 @@ class EthaAuto(
     /** The state and the latency said again (a Home opened or recreated mid-session learns them). */
     private fun announceState() {
         if (stopped) return
-        MessageUtil.sendMsg2UI(service, AppConfig.MSG_ETHA_STATE, if (!searching) "ok" else if (outage) "outage" else "searching")
+        MessageUtil.sendMsg2UI(service, AppConfig.MSG_ETHA_STATE, if (expired) "expired" else if (!searching) "ok" else if (outage) "outage" else "searching")
         if (results.containsKey(current)) tellLatency()
     }
 
@@ -589,12 +725,15 @@ class EthaAuto(
     private fun report(trigger: String, switched: Boolean) {
         if (stopped) return
         val probed = synchronized(probedSinceReport) { probedSinceReport.toSet() }
+        val pulled = synchronized(pulls) { pulls.toList() }
         val header = EthaReport.build(System.currentTimeMillis(), trigger, remarks[current], switched,
             lines.map { (remarks[it.guid] ?: "") to (if (it.guid in probed) (results[it.guid] ?: 0L) else 0L) }, passRateKbps,
-            colds = lines.mapNotNull { l -> colds[l.guid]?.takeIf { l.guid in probed && it > 0 }?.let { (remarks[l.guid] ?: "") to it } }.toMap())
+            colds = lines.mapNotNull { l -> colds[l.guid]?.takeIf { l.guid in probed && it > 0 }?.let { (remarks[l.guid] ?: "") to it } }.toMap(),
+            pulls = pulled)
         if (header != null) {
             MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, header)
             synchronized(probedSinceReport) { probedSinceReport.clear() }
+            synchronized(pulls) { pulls.subList(0, minOf(pulled.size, pulls.size)).clear() }   // the pulls the report carries; a pull made meanwhile stays for the next
         }
     }
 
@@ -705,6 +844,8 @@ class EthaAuto(
         private const val RATE_MIN_BYTES = 256L * 1024
         private const val FAILOVER_FETCH_GAP_MS = 600_000L
         private const val FIRST_PASS_TIMEOUT_MS = 3_000L
+        private const val PULL_HOUR_MS = 3_600_000L            // the pull budget's window (2.1.2)
+        private const val PULL_FRESH_MS = 60_000L              // a line pulled within this is not pulled again at Connect
 
         /**
          * The lines the selected profile's subscription holds, in its order, with their outbound tags — the members
@@ -726,6 +867,15 @@ class EthaAuto(
             if (slash < 0) return v.toLongOrNull()?.let { it to -1L }
             val warm = v.substring(0, slash).toLongOrNull() ?: return null
             return warm to (v.substring(slash + 1).toLongOrNull() ?: -1L)
+        }
+
+        /** One result of the core library's PullVia: "got/ms" → (KB that came, ms); null when it is not one (the core down, an older library). */
+        fun parsePull(v: String): Pair<Long, Long>? {
+            val slash = v.indexOf('/')
+            if (slash <= 0) return null
+            val got = v.substring(0, slash).toLongOrNull() ?: return null
+            val ms = v.substring(slash + 1).toLongOrNull() ?: return null
+            return if (got < 0 || ms < 0) null else got to ms
         }
 
         /** The usable lines among guids, tagged as getV2rayConfigForLines tags them (the same filter, the same order). */

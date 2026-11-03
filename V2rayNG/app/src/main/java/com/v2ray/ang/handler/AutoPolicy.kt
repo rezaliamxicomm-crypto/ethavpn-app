@@ -8,7 +8,7 @@ import com.v2ray.ang.AppConfig
  * never in bursts, and holds the balancer to the best, so a change of line moves new connections only and cuts nothing
  * that is open. The numbers here are the policy's defaults; the service's header X-Etha-Auto ("round=180,failed=900,
  * idle=600,margin=15,floor=25,stall=4,timeout=5,conc=8,fresh=600,search=60,sfetch=300,pace=1,cur=30,jitter=10,dwell=90,
- * persist=2,cap=7200,warm=20,fover=1500") replaces any of them on the next fetch, so they change without a release.
+ * persist=2,cap=7200,warm=20,fover=1500,pull=128,pullcap=6,pullwin=15") replaces any of them on the next fetch, so they change without a release.
  */
 data class AutoPolicy(
     /** every line measured once in this long, one probe at a time (the trickle), while the radio is warm or the app on screen */
@@ -49,6 +49,13 @@ data class AutoPolicy(
     val warmSec: Int = 20,
     /** the window of the failover probes (the line in use and the best alternative together) */
     val failoverMs: Int = 1500,
+    /** the pull (2.1.2): this many KB of the box's blob through a line — at Connect, on a stall whose HEAD passes, before a switch,
+     *  when the box calls the line in use dead; a line that answers a HEAD and carries nothing fails it; 0 = never */
+    val pullKb: Int = 128,
+    /** at most this many pulls in any hour */
+    val pullCapPerHour: Int = 6,
+    /** a pull that has not finished within this long counts as not carrying */
+    val pullWinSec: Int = 15,
 ) {
     val roundMs: Long get() = roundSec * 1000L
     val idleMs: Long get() = idleSec * 1000L
@@ -59,6 +66,8 @@ data class AutoPolicy(
     val warmMs: Long get() = warmSec * 1000L
     val currentMs: Long get() = currentSec * 1000L
     val dwellMs: Long get() = dwellSec * 1000L
+    val pullWinMs: Long get() = pullWinSec * 1000L
+    val stallMs: Long get() = stallSec * 1000L
 
     /**
      * Should new connections move from the line in use (its last time, -1 failed, 0 not measured) to the best line
@@ -137,6 +146,9 @@ data class AutoPolicy(
                     "cap" -> p = p.copy(retryCapSec = v.coerceIn(60, 86400))
                     "warm" -> p = p.copy(warmSec = v.coerceIn(5, 600))
                     "fover" -> p = p.copy(failoverMs = v.coerceIn(500, 10000))
+                    "pull" -> p = p.copy(pullKb = v.coerceIn(0, 256))
+                    "pullcap" -> p = p.copy(pullCapPerHour = v.coerceIn(0, 60))
+                    "pullwin" -> p = p.copy(pullWinSec = v.coerceIn(5, 60))
                 }
             }
             return p

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.text.TextUtils
 import com.v2ray.ang.AngApplication
+import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreConfigManager
@@ -526,6 +527,18 @@ object AngConfigManager {
      * @param it The subscription item.
      * @return Subscription update result.
      */
+    /** A signed 403 for our link (2.1.2): the subscription ended — the box's own word, which no hop can forge. The account card says
+     *  so at once (the expiry set to the past; a renewal's fetch sets it right again), the running engine stops looking for a line that
+     *  cannot come back (EthaAuto.onExpired), and the lines stay for the day the link is renewed — the same link. A failure to the caller. */
+    private fun expired(it: SubscriptionCache): SubscriptionUpdateResult {
+        LogUtil.w(AppConfig.TAG, "Subscription answered 403 with the box's word: expired")
+        it.subscription.expire = System.currentTimeMillis() / 1000 - 1
+        it.subscription.lastUpdated = System.currentTimeMillis()
+        MmkvManager.encodeSubscription(it.guid, it.subscription)
+        MessageUtil.sendMsg2Service(AngApplication.application, AppConfig.MSG_ETHA_EXPIRED, it.guid)
+        return SubscriptionUpdateResult(failureCount = 1)
+    }
+
     fun updateConfigViaSub(it: SubscriptionCache): SubscriptionUpdateResult {
         try {
             // Check if disabled
@@ -571,10 +584,18 @@ object AngConfigManager {
             var answered = false
             // What Auto measured rides on the fetch as X-Etha-Lines (EthaReport); it is cleared once a server answered.
             val report = if (ours) MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_LINE_REPORT).orEmpty() else ""
-            val extraHeaders = if (report.isNotEmpty()) mapOf(AppConfig.ETHA_LINES_HEADER to report) else emptyMap()
+            val signature = EthaNetwork.signature(AngApplication.application)
+            // Beside the report (2.1.2): this phone as a code (X-Etha-Device, EthaDevice) and, on mobile data, the SIM's network
+            // (X-Etha-Carrier) — on every way of the fetch, report or not.
+            val extraHeaders: Map<String, String> = if (!ours) emptyMap() else buildMap {
+                if (report.isNotEmpty()) put(AppConfig.ETHA_LINES_HEADER, report)
+                EthaDevice.hash(AngApplication.application)?.let { put(AppConfig.ETHA_DEVICE_HEADER, it) }
+                EthaNetwork.carrier(signature)?.let { put(AppConfig.ETHA_CARRIER_HEADER, it) }
+            }
             var response = if (ours) {
-                val outcome = EthaLinkFetch.fetch(url, it.guid, userAgent, extraHeaders, EthaNetwork.signature(AngApplication.application))
+                val outcome = EthaLinkFetch.fetch(url, it.guid, userAgent, extraHeaders, signature)
                 answered = outcome.answered
+                if (outcome.answered && outcome.signed && outcome.status == 403) return expired(it)   // the box's own word: the subscription ended (2.1.2)
                 // the report is spent only when the box could file it under this phone's network: a fetch that won through the
                 // tunnel reaches the box from its own address and is filed as "through the tunnel" (ignored for the ranking) —
                 // and only when it is still the same report (Auto may have written a newer one meanwhile)
@@ -605,6 +626,7 @@ object AngConfigManager {
                     val held = MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_SIGNED_AT)?.toLongOrNull() ?: 0L
                     val verdict = if (EthaHopFetch.answered(r)) EthaLinkFetch.replayVerdict(r!!.signedAt, held, System.currentTimeMillis() / 1000) else "none"
                     val taken = verdict == "fresh" || verdict == "stale"
+                    if (taken && r!!.status == 403) return expired(it)   // the box's own word by the last resort too (2.1.2)
                     if (taken) {
                         if (report.isNotEmpty() && MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_LINE_REPORT) == report) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, "")
                         EthaLinkFetch.rememberSigned(r!!.signedAt)
@@ -646,6 +668,7 @@ object AngConfigManager {
                 if (ours) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_HINT, response.headers[AppConfig.ETHA_HINT_HEADER]?.trim()?.takeIf { Hint.parse(it) != null }.orEmpty())   // the box's advice for Auto (Hint); none this fetch: none kept
                 MmkvManager.encodeSubscription(it.guid, it.subscription)
                 LogUtil.i(AppConfig.TAG, "Subscription updated: ${it.subscription.remarks}, $count configs")
+                if (ours) MessageUtil.sendMsg2Service(AngApplication.application, AppConfig.MSG_ETHA_FETCHED, it.guid)   // the running engine reads the fresh advice (EthaAuto.onFetched, 2.1.2)
                 return SubscriptionUpdateResult(
                     configCount = count,
                     successCount = 1

@@ -579,6 +579,14 @@ object CoreServiceManager {
                 AppConfig.MSG_ETHA_WATCH -> {
                     auto?.noteWatched()   // the Home screen is showing the chip: the line in use is kept fresh for it, and the state is said again
                 }
+
+                AppConfig.MSG_ETHA_FETCHED -> {
+                    auto?.onFetched(intent?.getStringExtra("content").orEmpty())   // our link answered: the fresh advice is read (2.1.2)
+                }
+
+                AppConfig.MSG_ETHA_EXPIRED -> {
+                    auto?.onExpired(intent?.getStringExtra("content").orEmpty())   // the box said the subscription ended: nothing to look for (2.1.2)
+                }
             }
 
             when (intent?.action) {

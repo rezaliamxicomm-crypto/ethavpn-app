@@ -25,4 +25,12 @@ object EthaNetwork {
     } catch (_: Exception) {
         "other"
     }
+
+    /** Pure: the SIM's MCC-MNC from a signature on mobile data ("cell:43235" → "43235"), for the fetch's X-Etha-Carrier (2.1.2);
+     *  null on Wi-Fi, anything else, or no proper digits — the box uses it only when the fetch's address says nothing. */
+    fun carrier(signature: String): String? {
+        if (!signature.startsWith("cell:")) return null
+        val digits = signature.removePrefix("cell:")
+        return digits.takeIf { it.length in 5..6 && it.all(Char::isDigit) }
+    }
 }

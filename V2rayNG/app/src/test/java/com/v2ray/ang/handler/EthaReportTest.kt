@@ -27,6 +27,20 @@ class EthaReportTest {
     }
 
     @Test
+    fun thePullsRideAfterTheConnectTimes() {
+        val h = EthaReport.build(1_761_770_000_000L, "stall", "EthaVPN-REALITY-relay-FRA9-443", false, listOf("EthaVPN-REALITY-relay-FRA9-443" to 160L),
+            pulls = listOf(EthaReport.Pull("REALITY-relay-FRA9-443", 128, 128, 940, "c"), EthaReport.Pull("REALITY-relay-FRA3-443", 12, 128, 5000, "s"),
+                           EthaReport.Pull("bad label", 1, 1, 1, "w"), EthaReport.Pull("REALITY-relay-FRA5-443", -3, 64, 10, "")))
+        assertEquals("v=1;t=1761770000;trig=stall;use=REALITY-relay-FRA9-443;sw=0;l=REALITY-relay-FRA9-443:160;" +
+            "p=REALITY-relay-FRA9-443:128/128/940/c,REALITY-relay-FRA3-443:12/128/5000/s,REALITY-relay-FRA5-443:0/64/10/o", h)
+        val many = (1..40).map { EthaReport.Pull("L$it-1-x-443", 1, 1, 1, "w") }
+        val tail = EthaReport.build(0L, "auto", null, false, listOf("EthaVPN-A-1-x-443" to 5L), pulls = many)!!.substringAfter("p=").split(',')
+        assertEquals(EthaReport.MAX_PULLS, tail.size)
+        assertTrue(tail.last().startsWith("L40-1-x-443:"))   // the newest kept
+        assertEquals("v=1;t=0;trig=auto;use=;sw=0;l=A-1-x-443:5", EthaReport.build(0L, "auto", null, false, listOf("EthaVPN-A-1-x-443" to 5L)))   // none: as before
+    }
+
+    @Test
     fun noLineOfOursMeasuredMeansNoHeader() {
         assertNull(EthaReport.build(1L, "auto", null, false, listOf("Other" to 5L, "EthaVPN-X-y-z-1" to 0L)))
     }

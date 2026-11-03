@@ -12,7 +12,10 @@ package libv2ray
 //   - MeasureOutbounds: the named outbounds measured through the running core (a request forced down one outbound,
 //     the forced-outbound hook Xray's observatory uses), MeasureOutboundsIn the same through a throw-away core for
 //     the app's test while the tunnel is down — one core for every line instead of one core per line;
-//   - InboundTraffic: an inbound's counters as they stand, for the app's stall detector.
+//   - InboundTraffic: an inbound's counters as they stand, for the app's stall detector;
+//   - PullVia: a pull of so many KB of the box's blob through one outbound, counted as it arrives (2.1.2) — the second
+//     opinion a HEAD cannot give: a line the network has soft-killed answers a HEAD and carries nothing; PullIn the same
+//     through a throw-away core (the tests).
 
 import (
 	"context"
@@ -153,28 +156,9 @@ func (x *CoreController) MeasureOutbounds(tagsCSV string, url string, timeoutMs 
 // its outbounds, dispatcher and log kept, as MeasureOutboundDelay builds one — for the app's test while the tunnel
 // is down.
 func MeasureOutboundsIn(configContent string, tagsCSV string, url string, timeoutMs int, concurrency int) (string, error) {
-	config, err := coreserial.LoadJSONConfig(strings.NewReader(configContent))
+	inst, err := throwawayCore(configContent)
 	if err != nil {
-		return "", fmt.Errorf("config load error: %w", err)
-	}
-	config.Inbound = nil
-	var essential []*serial.TypedMessage
-	for _, app := range config.App {
-		if app.Type == "xray.app.proxyman.OutboundConfig" ||
-			app.Type == "xray.app.dispatcher.Config" ||
-			app.Type == "xray.app.log.Config" {
-			essential = append(essential, app)
-		}
-	}
-	config.App = essential
-
-	inst, err := core.New(config)
-	if err != nil {
-		return "", fmt.Errorf("instance creation failed: %w", err)
-	}
-	if err := inst.Start(); err != nil {
-		inst.Close()
-		return "", fmt.Errorf("startup failed: %w", err)
+		return "", err
 	}
 	defer inst.Close()
 	return measureOutbounds(inst, splitTags(tagsCSV), url, timeoutMs, concurrency), nil
@@ -327,6 +311,138 @@ func (x *CoreController) InboundTraffic(tag string) string {
 	return fmt.Sprintf("%d,%d",
 		counterValue(sm, "inbound>>>"+tag+">>>traffic>>>uplink"),
 		counterValue(sm, "inbound>>>"+tag+">>>traffic>>>downlink"))
+}
+
+// PullVia pulls wantKb KB of url through the outbound tag — a GET with a Range header for bytes 0 to wantKb*1024-1 — and
+// counts what arrives, never keeping it: "got/ms", got the KB that came (bytes / 1024), ms how long it took, or ran until
+// it ended — every byte in, or no byte for idleMs (the line answers but carries nothing), or winMs over (too slow), or a
+// status of 400 or more, or an error (0 KB). A got of wantKb is a line that carries. "" when the core is down. The body's
+// first byte must come within twice idleMs (the response-header window). Defaults: 128 KB, 15 s, 4 s.
+func (x *CoreController) PullVia(tag string, url string, wantKb int, winMs int, idleMs int) string {
+	inst := x.instance()
+	if inst == nil {
+		return ""
+	}
+	got, ms := pullVia(inst, tag, url, wantKb, winMs, idleMs)
+	return fmt.Sprintf("%d/%d", got, ms)
+}
+
+// PullIn is PullVia through a throw-away core built from configContent (as MeasureOutboundsIn builds one).
+func PullIn(configContent string, tag string, url string, wantKb int, winMs int, idleMs int) (string, error) {
+	inst, err := throwawayCore(configContent)
+	if err != nil {
+		return "", err
+	}
+	defer inst.Close()
+	got, ms := pullVia(inst, tag, url, wantKb, winMs, idleMs)
+	return fmt.Sprintf("%d/%d", got, ms), nil
+}
+
+func throwawayCore(configContent string) (*core.Instance, error) {
+	config, err := coreserial.LoadJSONConfig(strings.NewReader(configContent))
+	if err != nil {
+		return nil, fmt.Errorf("config load error: %w", err)
+	}
+	config.Inbound = nil
+	var essential []*serial.TypedMessage
+	for _, app := range config.App {
+		if app.Type == "xray.app.proxyman.OutboundConfig" ||
+			app.Type == "xray.app.dispatcher.Config" ||
+			app.Type == "xray.app.log.Config" {
+			essential = append(essential, app)
+		}
+	}
+	config.App = essential
+	inst, err := core.New(config)
+	if err != nil {
+		return nil, fmt.Errorf("instance creation failed: %w", err)
+	}
+	if err := inst.Start(); err != nil {
+		inst.Close()
+		return nil, fmt.Errorf("startup failed: %w", err)
+	}
+	return inst, nil
+}
+
+func pullVia(inst *core.Instance, tag string, url string, wantKb int, winMs int, idleMs int) (int64, int64) {
+	if wantKb <= 0 {
+		wantKb = 128
+	}
+	if winMs <= 0 {
+		winMs = 15000
+	}
+	if idleMs <= 0 {
+		idleMs = 4000
+	}
+	want := int64(wantKb) * 1024
+	idle := time.Duration(idleMs) * time.Millisecond
+	client, tr := probeClient(inst, tag, time.Duration(winMs)*time.Millisecond)
+	tr.ResponseHeaderTimeout = 2 * idle
+	defer tr.CloseIdleConnections()
+	start := time.Now()
+	elapsed := func() int64 { return time.Since(start).Milliseconds() }
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return 0, 0
+	}
+	req.Header.Set("Range", fmt.Sprintf("bytes=0-%d", want-1))
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, elapsed()
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return 0, elapsed()
+	}
+	type chunk struct {
+		n   int
+		err error
+	}
+	done := make(chan struct{})
+	defer close(done)
+	ch := make(chan chunk, 1)
+	go func() {
+		buf := make([]byte, 32*1024)
+		for {
+			n, err := resp.Body.Read(buf)
+			select {
+			case ch <- chunk{n, err}:
+			case <-done:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	var got int64
+	timer := time.NewTimer(idle)
+	defer timer.Stop()
+	for got < want {
+		select {
+		case c := <-ch:
+			got += int64(c.n)
+			if c.err != nil {
+				// the end of the body (the server sent what it had) or the connection dropped: what came is what counts
+				return min64(got, want) / 1024, elapsed()
+			}
+			if !timer.Stop() {
+				<-timer.C
+			}
+			timer.Reset(idle)
+		case <-timer.C:
+			// nothing for idleMs: the line answers but carries nothing (or no more)
+			return got / 1024, elapsed()
+		}
+	}
+	return want / 1024, elapsed()
+}
+
+func min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func counterValue(sm corestats.Manager, name string) int64 {
