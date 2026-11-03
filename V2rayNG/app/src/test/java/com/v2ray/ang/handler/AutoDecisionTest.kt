@@ -10,6 +10,27 @@ class AutoDecisionTest {
     private fun s(sec: Int) = sec * 1000L
 
     @Test
+    fun aSecondLookIsWorthItOnlyForALeadThatWouldMove() {
+        assertEquals(true, AutoDecision.worthASecondLook(AutoDecision.Phase.PASS_END, 304, 165, p))     // ahead by the margin
+        assertEquals(false, AutoDecision.worthASecondLook(AutoDecision.Phase.PASS_END, 170, 160, p))    // not by the margin
+        assertEquals(true, AutoDecision.worthASecondLook(AutoDecision.Phase.FIRST, 243, 163, p))        // twice the margin for the first pass
+        assertEquals(false, AutoDecision.worthASecondLook(AutoDecision.Phase.FIRST, 243, 200, p))
+        assertEquals(false, AutoDecision.worthASecondLook(AutoDecision.Phase.MANUAL, 304, 165, p))      // measured together already
+        assertEquals(false, AutoDecision.worthASecondLook(AutoDecision.Phase.FAILOVER, 304, 165, p))
+        assertEquals(false, AutoDecision.worthASecondLook(AutoDecision.Phase.PASS_END, -1, 165, p))     // a failed line in use: the failover's own
+        assertEquals(false, AutoDecision.worthASecondLook(AutoDecision.Phase.PASS_END, 304, 0, p))
+    }
+
+    @Test
+    fun theChipShowsTheBestRecentReadingAndAFailureAsItIs() {
+        val r = listOf(163L to 1_000L, 304L to 31_000L, 161L to 61_000L)
+        assertEquals(161L, AutoDecision.steady(r, 304L, 90_000L, 90_000L))        // the latest 304 after readings of 163 and 161: 161
+        assertEquals(304L, AutoDecision.steady(r, 304L, 200_000L, 90_000L))       // every good reading older than the window: the latest
+        assertEquals(-1L, AutoDecision.steady(r, -1L, 90_000L, 90_000L))          // a failure is a failure
+        assertEquals(150L, AutoDecision.steady(r, 150L, 90_000L, 90_000L))        // the latest is the best
+    }
+
+    @Test
     fun aFailedLineInUseFailsOverToTheBestKnownAtOnce() {
         val d = AutoDecision()
         d.lastSwitchAt = s(95)                                                   // moved five seconds ago: the dwell does not hold a failover

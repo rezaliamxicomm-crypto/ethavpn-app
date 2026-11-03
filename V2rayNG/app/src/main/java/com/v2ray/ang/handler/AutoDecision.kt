@@ -62,5 +62,27 @@ class AutoDecision {
         /** The best measured line: the lowest time, the subscription's order among equals. */
         fun best(candidates: List<Candidate>): Candidate? =
             candidates.filter { it.ms > 0 }.minWithOrNull(compareBy({ it.ms }, { it.order }))
+
+        /**
+         * The second look (2.1.3): whether a candidate's lead over the line in use — numbers taken at different moments — is worth
+         * measuring the two together before any move. A probe made alone on an idle link pays the radio's wake-up (about 140 ms on
+         * an iPhone's Wi-Fi power save; the line in use, probed first and alone, read 300 ms where the lines probed together read
+         * 160), so numbers taken apart are not comparable and a move on them flips the lines back and forth. A failed line in use
+         * needs no look (the failover's own joint probe serves); a manual test measures every line together already.
+         */
+        fun worthASecondLook(phase: Phase, currentMs: Long, bestMs: Long, policy: AutoPolicy): Boolean = when {
+            currentMs <= 0 || bestMs <= 0 -> false
+            phase == Phase.FAILOVER || phase == Phase.MANUAL -> false
+            phase == Phase.FIRST -> policy.shouldSwitch(currentMs, bestMs, factor = 2)
+            else -> policy.shouldSwitch(currentMs, bestMs)
+        }
+
+        /** The chip's number (2.1.3): the best of the line in use's readings within the window — a probe alone on an idle link pays the
+         *  wake-up, the next may not —, never older than the window; a failed latest reading is shown as it is. [readings]: (ms, at). */
+        fun steady(readings: List<Pair<Long, Long>>, latest: Long, nowMs: Long, windowMs: Long): Long {
+            if (latest <= 0) return latest
+            val fresh = readings.filter { it.first > 0 && nowMs - it.second in 0..windowMs }.map { it.first }
+            return minOf(latest, fresh.minOrNull() ?: latest)
+        }
     }
 }

@@ -144,6 +144,7 @@ class EthaAuto(
     @Volatile private var lastPull: Triple<String, Long, Boolean>? = null   // the line last pulled, when, and whether it carried
     private var connectPullDue = true                            // the Connect pull: once after Connect, once after a network change
     @Volatile private var expired = false                        // the box said the subscription ended: nothing to look for until a fetch answers again
+    private val recentCurrent = ArrayDeque<Pair<Long, Long>>()   // the line in use's last good readings (ms, mono): the chip shows the best within STEADY_WINDOW_MS (2.1.3)
     private var deadPulledFor: Hint? = null                      // the advice the line in use was last judged against (once per advice)
     private val subscriptionId = MmkvManager.decodeServerConfig(start)?.subscriptionId.orEmpty()
 
@@ -210,9 +211,10 @@ class EthaAuto(
         scope.launch {
             measuring.withLock {
                 if (stopped) return@withLock
-                byGuid[current]?.let { measureSet(listOf(it), 1, policy.probeTimeoutMs, whole = false) }
-                val rest = lines.filter { it.guid != current }
-                if (rest.isNotEmpty()) measureSet(rest, rest.size, policy.probeTimeoutMs, whole = true)
+                // every line in one batch, the line in use among them (2.1.3): until 2.1.2 the line in use went first and alone, and a
+                // probe alone on an idle link pays the radio's wake-up — it read 300 ms where the lines read together read 160, so
+                // every test moved off it and the next test moved back
+                measureSet(lines, lines.size, policy.probeTimeoutMs, whole = true)
                 val moved = decide(AutoDecision.Phase.MANUAL, "manual", notify = false)
                 report("manual", moved)
                 updateSearchingLocked()
@@ -568,7 +570,10 @@ class EthaAuto(
             if (ms > 0) {
                 results[guid] = ms
                 health.ok(labels.getValue(guid), ms, wallSec)
-                if (guid == current) firstReading = true
+                if (guid == current) {
+                    firstReading = true
+                    synchronized(recentCurrent) { recentCurrent.addLast(ms to mono()); while (recentCurrent.size > STEADY_KEPT) recentCurrent.removeFirst() }
+                }
             } else if (condemn) {
                 results[guid] = ms
                 health.failed(labels.getValue(guid), wallSec, policy)
@@ -597,6 +602,7 @@ class EthaAuto(
         }
         current = guid
         passRateKbps = 0
+        synchronized(recentCurrent) { recentCurrent.clear() }
         if (MmkvManager.decodeServerConfig(guid) != null) MmkvManager.setSelectServer(guid)
         LogUtil.i(AppConfig.TAG, "Auto: new connections take ${nameOf(guid)} ($reason)")
         if (notify) MessageUtil.sendMsg2UI(service, AppConfig.MSG_ETHA_SWITCHED, guid)
@@ -605,9 +611,27 @@ class EthaAuto(
     }
 
     private fun decide(phase: AutoDecision.Phase, reason: String, notify: Boolean): Boolean {
-        val candidates = lines.map { AutoDecision.Candidate(it.guid, results[it.guid] ?: 0L, it.order) }
-        val cur = candidates.firstOrNull { it.id == current } ?: return false
+        var candidates = lines.map { AutoDecision.Candidate(it.guid, results[it.guid] ?: 0L, it.order) }
+        var cur = candidates.firstOrNull { it.id == current } ?: return false
+        // The second look (2.1.3): numbers taken apart are not comparable — a probe alone on an idle link pays the radio's wake-up —
+        // so before any move by latency the line in use and the candidate are measured together, and the decision sees those numbers.
+        val stale = AutoDecision.best(candidates.filter { it.id != current })
+        if (stale != null && AutoDecision.worthASecondLook(phase, cur.ms, stale.ms, policy)) {
+            val apart = cur.ms to stale.ms
+            val pair = listOfNotNull(byGuid[current], byGuid[stale.id])
+            val out = measureOnce(pair, pair.size, if (schedule.fallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, policy.probeTimeoutMs)
+            if (out.isNotEmpty()) {
+                record(out, pair)
+                candidates = lines.map { AutoDecision.Candidate(it.guid, results[it.guid] ?: 0L, it.order) }
+                cur = candidates.first { it.id == current }
+                LogUtil.i(AppConfig.TAG, "Auto: a second look, together: ${nameOf(current)}=${results[current]} ${nameOf(stale.id)}=${results[stale.id]} (apart they read ${apart.first} and ${apart.second})")
+            }
+        }
         val target = decision.target(mono(), phase, cur, candidates, policy) ?: return false
+        if (stale != null && target != stale.id && cur.ms >= 0 && phase != AutoDecision.Phase.MANUAL) {   // another line leads by a number not taken together: not this pass
+            LogUtil.i(AppConfig.TAG, "Auto: ${nameOf(target)} leads by a reading taken apart: no move this pass")
+            return false
+        }
         val p = byGuid[target]?.let { pullLocked(it, "w") }
         if (p != null && !p.carries) {                            // the candidate answers but carries nothing (2.1.2): no move, the candidate held as failed
             LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(target)} answers but carries nothing: no move")
@@ -764,8 +788,9 @@ class EthaAuto(
     /** The line in use's time to the UI: the chip's number. */
     private fun tellLatency() {
         if (stopped) return
-        val ms = results[current] ?: 0L
-        if (ms <= 0 && !firstReading) return   // before the first answer after Connect the chip stays "Connecting…", whatever a probe did (2.1.1)
+        val latest = results[current] ?: 0L
+        if (latest <= 0 && !firstReading) return   // before the first answer after Connect the chip stays "Connecting…", whatever a probe did (2.1.1)
+        val ms = AutoDecision.steady(synchronized(recentCurrent) { recentCurrent.toList() }, latest, mono(), STEADY_WINDOW_MS)   // the best recent reading (2.1.3)
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_ETHA_LATENCY, ms.toString())
     }
 
@@ -902,6 +927,8 @@ class EthaAuto(
         private const val FIRST_PASS_TIMEOUT_MS = 3_000L
         private const val PULL_HOUR_MS = 3_600_000L            // the pull budget's window (2.1.2)
         private const val PULL_FRESH_MS = 60_000L              // a line pulled within this is not pulled again at Connect
+        private const val STEADY_WINDOW_MS = 90_000L           // the chip shows the best reading of the line in use within this (2.1.3)
+        private const val STEADY_KEPT = 5
 
         /**
          * The lines the selected profile's subscription holds, in its order, with their outbound tags — the members
