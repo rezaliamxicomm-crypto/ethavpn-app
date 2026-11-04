@@ -596,6 +596,7 @@
     <string name="etha_server_unreachable">%s is unreachable</string>
     <string name="etha_switch_server">Switch server</string>
     <string name="etha_keep_waiting">Keep waiting</string>
+    <string name="etha_server_notapplied">Could not switch the server. Try again.</string>
     <string name="etha_exit_down_hint">The server you chose is not answering. Switch to another, or wait.</string>
     <string name="etha_devices_title">Device limit reached</string>
     <string name="etha_devices_text">This link is already in use on %1$d phones; the limit is %2$d. Remove a phone in the Telegram bot, or ask support.</string>

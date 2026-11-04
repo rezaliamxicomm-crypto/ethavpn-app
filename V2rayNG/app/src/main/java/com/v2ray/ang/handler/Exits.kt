@@ -59,6 +59,8 @@ object Exits {
     fun stored(): List<Exit> = parse(MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_EXITS))
     fun offered(): List<Exit> = stored().filter { it.state != "off" }
     fun byCode(code: String): Exit? = stored().firstOrNull { it.code == code }
+    /** The box itself among the countries (its probe address): the control beside a card's probe — a dead line fails both, a dead card only its own. */
+    fun controlCode(): String? = stored().firstOrNull { it.probe == AppConfig.ETHA_PROBE_BOX_IP }?.code
     /** The box's word of this phone's choice ("" = Auto). */
     fun current(): String = MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_EXIT).orEmpty()
     /** A choice the box has not confirmed yet ("auto" for none), else null. */
@@ -67,15 +69,28 @@ object Exits {
     fun shown(): String = want()?.let { if (it == "auto") "" else it } ?: current()
     fun choose(code: String) = MmkvManager.encodeSettings(AppConfig.PREF_ETHA_EXIT_WANT, code.ifEmpty { "auto" })
 
-    /** The fetch's answer: the list, the box's word of the choice (a confirmed one clears the pending), the lowest app version. */
-    fun remember(headers: Map<String, String>) {
+    /** The fetch's answer: the list, the box's word of the choice, the lowest app version (absent = none). A pending choice ends with the
+     *  answer to the fetch that carried it (`carried`): confirmed or not, the box's word stands — a choice the box could not apply (a country
+     *  turned off meanwhile, a phone on the shared id) is not shown as if it had been. */
+    fun remember(headers: Map<String, String>, carried: String? = null) {
         val list = headers[AppConfig.ETHA_EXITS_HEADER]?.trim().orEmpty()
         MmkvManager.encodeSettings(AppConfig.PREF_ETHA_EXITS, if (parse(list).isNotEmpty()) list else "")
         val mine = headers[AppConfig.ETHA_EXIT_HEADER]?.trim().orEmpty()
         MmkvManager.encodeSettings(AppConfig.PREF_ETHA_EXIT, mine)
         val w = want()
-        if (w != null && (if (w == "auto") mine.isEmpty() else mine == w)) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_EXIT_WANT, "")
-        headers[AppConfig.ETHA_APP_MIN_HEADER]?.let { MmkvManager.encodeSettings(AppConfig.PREF_ETHA_APP_MIN, it.trim()) }
+        if (w != null && settled(w, mine, carried)) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_EXIT_WANT, "")
+        MmkvManager.encodeSettings(AppConfig.PREF_ETHA_APP_MIN, headers[AppConfig.ETHA_APP_MIN_HEADER]?.trim().orEmpty())
+    }
+
+    /** Pure: a pending choice is settled by the box's confirmation (`auto` by an absent word), or by the answer to the fetch that carried it. */
+    fun settled(want: String, mine: String, carried: String?): Boolean = (if (want == "auto") mine.isEmpty() else mine == want) || carried == want
+
+    /** Pure: `version` below `min` — numeric, dot-separated, a missing part 0, a suffix ignored. */
+    fun isBelow(version: String, min: String): Boolean {
+        fun parts(s: String) = s.trim().removePrefix("v").split(".").map { it.takeWhile { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+        val a = parts(version); val b = parts(min)
+        for (i in 0 until maxOf(a.size, b.size)) { val x = a.getOrNull(i) ?: 0; val y = b.getOrNull(i) ?: 0; if (x != y) return x < y }
+        return false
     }
 
     /** The last measured latencies, code → ms (-1 failed), for the sheet before the next measurement. */
@@ -86,5 +101,5 @@ object Exits {
     }
 
     /** The update screen is due: the box's lowest Android version is above this build (X-Etha-App-Min). */
-    fun updateDue(): Boolean = minVersion(MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_APP_MIN))?.let { UpdateCheckerManager.compareVersions(it, BuildConfig.VERSION_NAME) > 0 } ?: false
+    fun updateDue(): Boolean = minVersion(MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_APP_MIN))?.let { isBelow(BuildConfig.VERSION_NAME, it) } ?: false
 }

@@ -598,11 +598,12 @@ object AngConfigManager {
             val signature = EthaNetwork.signature(AngApplication.application)
             // Beside the report (2.1.2): this phone as a code (X-Etha-Device, EthaDevice) and, on mobile data, the SIM's network
             // (X-Etha-Carrier) — on every way of the fetch, report or not.
+            val carried = if (ours) Exits.want() else null   // the pending choice this fetch carries (3.0.0): settled by its answer, confirmed or not
             val extraHeaders: Map<String, String> = if (!ours) emptyMap() else buildMap {
                 if (report.isNotEmpty()) put(AppConfig.ETHA_LINES_HEADER, report)
                 EthaDevice.hash(AngApplication.application)?.let { put(AppConfig.ETHA_DEVICE_HEADER, it) }
                 EthaNetwork.carrier(signature)?.let { put(AppConfig.ETHA_CARRIER_HEADER, it) }
-                Exits.want()?.let { put(AppConfig.ETHA_EXIT_SET_HEADER, it) }     // the Servers box (3.0.0): this phone's choice, until the box confirms it
+                carried?.let { put(AppConfig.ETHA_EXIT_SET_HEADER, it) }          // the Servers box (3.0.0): this phone's choice, until a fetch that carried it is answered
                 put(AppConfig.ETHA_MODEL_HEADER, EthaDevice.model())              // the operator's device card: the phone's model and OS version
                 put(AppConfig.ETHA_OS_HEADER, EthaDevice.os())
             }
@@ -679,7 +680,7 @@ object AngConfigManager {
                 EthaSubscription.applyHeaders(it.subscription, response.headers)
                 response.headers[AppConfig.ETHA_AUTO_HEADER]?.let { v -> MmkvManager.encodeSettings(AppConfig.PREF_ETHA_AUTO_POLICY, v.trim()) }   // Auto's policy (AutoPolicy)
                 if (ours) EthaHopFetch.remember(response.headers)   // where the link hop inside Iran is now, for the next time nothing else answers
-                if (ours) Exits.remember(response.headers)   // the countries on offer, the box's word of this phone's choice, the lowest app version (3.0.0)
+                if (ours) Exits.remember(response.headers, carried)   // the countries on offer, the box's word of this phone's choice, the lowest app version (3.0.0)
                 if (ours) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_HINT, response.headers[AppConfig.ETHA_HINT_HEADER]?.trim()?.takeIf { Hint.parse(it) != null }.orEmpty())   // the box's advice for Auto (Hint); none this fetch: none kept
                 MmkvManager.encodeSubscription(it.guid, it.subscription)
                 LogUtil.i(AppConfig.TAG, "Subscription updated: ${it.subscription.remarks}, $count configs")

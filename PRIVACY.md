@@ -22,6 +22,9 @@ What leaves your phone because the service cannot work without it:
   request carries no identifier.
 - The Renew and Support buttons open the EthaVPN Telegram bot; from there on Telegram's
   rules apply.
+- Since 3.0.0 the subscription request also carries the phone's model and Android version
+  (for example `Pixel 7`, `Android 14`) and the server country you chose, so that support can
+  tell your phones apart on your link; no identifier of yours.
 
 Nothing is sold or shared with third parties. The app is free software (GPL-3.0), built from
 [v2rayNG](https://github.com/2dust/v2rayNG) and [Xray-core](https://github.com/XTLS/Xray-core);

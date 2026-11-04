@@ -540,7 +540,7 @@ class EthaAuto(
 
     /** The lines measured through the running core; a line the core reports nothing for did not answer. A call that fails
      *  outright (the core restarting) is no measurement: an empty map, nothing recorded, nothing judged. */
-    private fun measureOnce(which: List<Line>, concurrency: Int, url: String, timeoutMs: Long): Map<String, Long> {
+    private fun measureOnce(which: List<Line>, concurrency: Int, url: String, timeoutMs: Long, recordCold: Boolean = true): Map<String, Long> {
         if (stopped) return emptyMap()
         val raw = try {
             controller.measureOutbounds(which.joinToString(",") { it.tag }, url, timeoutMs, concurrency.toLong())
@@ -556,7 +556,7 @@ class EthaAuto(
             val line = byTag[entry.substring(0, i)] ?: continue
             val pair = parsePair(entry.substring(i + 1)) ?: continue
             out[line.guid] = pair.first
-            if (pair.second > 0) colds[line.guid] = pair.second
+            if (recordCold && pair.second > 0) colds[line.guid] = pair.second   // a country's probe (recordCold false) includes a card's hop: not the line's cold time
         }
         if (raw.isNotEmpty()) for (line in which) if (line.guid !in out) out[line.guid] = -1L   // a line the core did not report did not answer
         return out
@@ -802,7 +802,7 @@ class EthaAuto(
                 if (stopped) return@withLock
                 val line = byGuid[current] ?: return@withLock
                 val out = wanted.joinToString(",") { (code, ip) ->
-                    val ms = try { measureOnce(listOf(line), 1, "http://$ip${AppConfig.ETHA_EXIT_PROBE_PATH}", 4_000L)[line.guid] ?: -1L } catch (_: Exception) { -1L }
+                    val ms = try { measureOnce(listOf(line), 1, "http://$ip${AppConfig.ETHA_EXIT_PROBE_PATH}", 4_000L, recordCold = false)[line.guid] ?: -1L } catch (_: Exception) { -1L }
                     "$code=$ms"
                 }
                 LogUtil.i(AppConfig.TAG, "Auto: the countries measured through ${nameOf(current)}: $out")

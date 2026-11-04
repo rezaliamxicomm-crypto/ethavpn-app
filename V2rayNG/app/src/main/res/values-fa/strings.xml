@@ -572,6 +572,7 @@
     <string name="etha_server_unreachable">%s در دسترس نیست</string>
     <string name="etha_switch_server">تغییر سرور</string>
     <string name="etha_keep_waiting">منتظر بمان</string>
+    <string name="etha_server_notapplied">تغییر سرور انجام نشد. دوباره تلاش کنید.</string>
     <string name="etha_exit_down_hint">سروری که انتخاب کرده‌اید پاسخ نمی‌دهد. سرور دیگری انتخاب کنید یا منتظر بمانید.</string>
     <string name="etha_devices_title">سقف دستگاه‌ها پر شده</string>
     <string name="etha_devices_text">این لینک هم‌اکنون روی %1$d گوشی استفاده می‌شود؛ سقف %2$d است. یکی از گوشی‌ها را در ربات تلگرام حذف کنید یا از پشتیبانی بپرسید.</string>

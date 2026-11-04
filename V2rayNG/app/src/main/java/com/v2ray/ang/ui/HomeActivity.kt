@@ -99,6 +99,11 @@ class HomeActivity : HelperBaseActivity() {
     private var sheet: BottomSheetDialog? = null
     private var sheetSelected = ""
     private var updateShown = false
+    private var exitFetchQueued = false   // a choice made while a fetch was running: one follow-up fetch that carries it (3.0.0 audit)
+    private var exitChosen: String? = null   // the last choice, until the box has answered: a word when it was not applied
+    private var measureStartedAt = 0L     // the sheet's "measuring…" turns to "unavailable" after ten seconds without an answer
+    private var devicesDialog: AlertDialog? = null
+    private var devicesShownAt = 0L
     private var updateResult: CheckUpdateResult? = null
     private var pulse: AnimatorSet? = null         // the halo's slow breath while connected
     private var rateOnLatency = false              // the customer just connected by hand: the first time that lands decides the rating ask
@@ -129,8 +134,8 @@ class HomeActivity : HelperBaseActivity() {
         binding.btnConnect.setOnClickListener { onConnectClick() }
         binding.btnPaste.setOnClickListener { pasteLink() }
         binding.btnScan.setOnClickListener { scanLink() }
-        binding.btnRefresh.setOnClickListener { if (exitDown) keepWaiting() else refreshServers() }
-        binding.btnTest.setOnClickListener { if (exitDown) openServers() else testLatency() }
+        binding.btnRefresh.setOnClickListener { if (exitDown && mainViewModel.isRunning.value == true) keepWaiting() else refreshServers() }
+        binding.btnTest.setOnClickListener { if (exitDown && mainViewModel.isRunning.value == true) openServers() else testLatency() }
         binding.boxServer.setOnClickListener { openServers() }   // 3.0.0: the Servers box
         binding.btnRenew.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_RENEW_URL) }
         binding.btnSupport.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_SUPPORT_URL) }
@@ -150,6 +155,7 @@ class HomeActivity : HelperBaseActivity() {
             connecting = false
             if (!running) {
                 searching = false; outage = false; expired = false; testing = false; latencyMs = 0L; latencyAt = 0L; outcome = 0
+                exitDown = false; exitFails = 0; exitWatchedAt = 0L   // the red state belongs to a connection; the next one is judged afresh
             }
             render()
         }
@@ -169,9 +175,9 @@ class HomeActivity : HelperBaseActivity() {
             if (searching) outcome = 0
             render()
         }
-        mainViewModel.lineSwitched.observe(this) { render() }
-        mainViewModel.exitsMeasured.observe(this) { onExitsMeasured(it) }
-        mainViewModel.devicesRefused.observe(this) { showDevicesLimit(it) }
+        mainViewModel.lineSwitched.observe(this) { exitFails = 0; render() }   // a new line: the country's count starts over
+        mainViewModel.exitsMeasured.observe(this) { if (it.isNotEmpty()) { onExitsMeasured(it); mainViewModel.exitsMeasured.value = "" } }   // consumed once (a recreated activity must not re-count it)
+        mainViewModel.devicesRefused.observe(this) { if (it.isNotEmpty()) { showDevicesLimit(it); mainViewModel.devicesRefused.value = "" } }
         mainViewModel.roundDone.observe(this) { result ->
             testing = false
             outcome = when (result) {
@@ -223,6 +229,7 @@ class HomeActivity : HelperBaseActivity() {
     }
 
     override fun onDestroy() {
+        sheet?.dismiss()
         pulse?.cancel()
         super.onDestroy()
     }
@@ -277,8 +284,8 @@ class HomeActivity : HelperBaseActivity() {
             when {
                 connecting -> R.string.etha_state_connecting
                 running && expired -> R.string.etha_state_expired
-                running && exitDown -> R.string.etha_state_not_connected   // the chosen country does not answer (3.0.0)
                 running && searching -> R.string.etha_state_searching
+                running && exitDown -> R.string.etha_state_not_connected   // the chosen country does not answer (3.0.0); a dead line says Searching first
                 running -> R.string.etha_state_connected
                 else -> R.string.etha_state_not_connected
             }
@@ -291,16 +298,16 @@ class HomeActivity : HelperBaseActivity() {
         binding.btnConnect.isEnabled = !connecting
         val disc = when {
             running && expired -> R.color.etha_red
-            running && exitDown -> R.color.etha_red
             running && searching -> R.color.etha_amber
+            running && exitDown -> R.color.etha_red
             running -> R.color.etha_green
             else -> R.color.etha_blue
         }
         binding.btnConnect.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, disc))
         binding.halo.setBackgroundResource(
             when {
-                running && exitDown -> R.drawable.bg_halo_red
                 running && (searching || expired) -> R.drawable.bg_halo_amber
+                running && exitDown -> R.drawable.bg_halo_red
                 running -> R.drawable.bg_halo_green
                 else -> R.drawable.bg_halo_blue
             }
@@ -308,9 +315,10 @@ class HomeActivity : HelperBaseActivity() {
         pulseHalo(running)
         binding.progress.isVisible = busy
         binding.btnTest.isEnabled = !empty && !testing && !connecting
-        binding.btnTest.text = getString(if (exitDown) R.string.etha_switch_server else if (testing) R.string.etha_testing else R.string.etha_test_latency)
+        val down = running && exitDown && !searching
+        binding.btnTest.text = getString(if (down) R.string.etha_switch_server else if (testing) R.string.etha_testing else R.string.etha_test_latency)
         binding.btnRefresh.isEnabled = !empty && !refreshing && !connecting
-        binding.btnRefresh.text = getString(if (exitDown) R.string.etha_keep_waiting else R.string.etha_refresh)
+        binding.btnRefresh.text = getString(if (down) R.string.etha_keep_waiting else R.string.etha_refresh)
         renderServerBox(running)
         renderChip()
         renderOutcome()
@@ -342,8 +350,8 @@ class HomeActivity : HelperBaseActivity() {
         when {
             testing -> styleChip(chip, red = false, text = getString(R.string.etha_testing))
             expired -> styleChip(chip, red = true, text = getString(R.string.etha_expired_short))
-            exitDown -> styleChip(chip, red = true, text = getString(R.string.etha_server_unreachable, Exits.byCode(Exits.shown())?.name ?: ""))
             searching -> styleChip(chip, red = true, text = getString(R.string.etha_no_line_answers) + " · " + ago(latencyAt))
+            exitDown -> styleChip(chip, red = true, text = getString(R.string.etha_server_unreachable, Exits.byCode(Exits.shown())?.name ?: ""))
             latencyAt == 0L -> styleChip(chip, red = false, text = getString(R.string.etha_state_connecting))   // the first measurement is on its way
             latencyMs > 0 -> styleChip(chip, red = false, text = "$latencyMs ms · " + ago(latencyAt))
             else -> styleChip(chip, red = true, text = getString(R.string.etha_no_answer_yet) + " · " + ago(latencyAt))   // the line in use failed its probe; Auto is on it
@@ -368,8 +376,8 @@ class HomeActivity : HelperBaseActivity() {
         val running = mainViewModel.isRunning.value == true
         val text = when {
             running && expired -> getString(R.string.etha_expired_hint)
-            running && exitDown -> getString(R.string.etha_exit_down_hint)
             running && searching -> getString(if (outage) R.string.etha_lines_blocked else R.string.etha_searching_hint)   // the box's word when every phone of the network fails
+            running && exitDown -> getString(R.string.etha_exit_down_hint)
             outcome != 0 -> getString(outcome)
             else -> ""
         }
@@ -678,6 +686,8 @@ class HomeActivity : HelperBaseActivity() {
         refreshSubscription()
         render()
         maybeShowUpdate()
+        if (exitFetchQueued && Exits.want() != null) { exitFetchQueued = false; refreshQuietly() }   // a choice made while a fetch was running: one follow-up that carries it
+        exitChosen?.let { chosen -> if (Exits.want() == null) { exitChosen = null; if (Exits.current() != chosen) toastError(R.string.etha_server_notapplied) } }   // the box's word stands
         SubscriptionUpdater.sync(forceReschedule = true)   // the background refresh, timed from this fetch
         if (MmkvManager.decodeSettingsBool(AppConfig.PREF_ETHA_LINES_CHANGED, false)) {
             MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINES_CHANGED, false)
@@ -705,6 +715,7 @@ class HomeActivity : HelperBaseActivity() {
         val offered = Exits.offered()
         if (offered.isEmpty() || sheet != null) return
         val running = mainViewModel.isRunning.value == true
+        if (running) measureStartedAt = System.currentTimeMillis()
         sheetSelected = Exits.shown()
         val dialog = BottomSheetDialog(this)
         val view = LayoutInflater.from(this).inflate(R.layout.sheet_servers, null)
@@ -726,7 +737,7 @@ class HomeActivity : HelperBaseActivity() {
                 ms.text = when {
                     e == null -> ""
                     !e.ok -> getString(R.string.etha_server_unavailable)
-                    m == null -> if (running) getString(R.string.etha_server_measuring) else ""
+                    m == null -> if (!running) "" else if (System.currentTimeMillis() - measureStartedAt < 10_000L) getString(R.string.etha_server_measuring) else getString(R.string.etha_server_unavailable)
                     m <= 0 -> getString(R.string.etha_server_unavailable)
                     else -> "$m ms"
                 }
@@ -743,16 +754,17 @@ class HomeActivity : HelperBaseActivity() {
             dialog.dismiss()
             if (sheetSelected != Exits.shown()) {
                 Exits.choose(sheetSelected)
-                exitDown = false; exitFails = 0
+                exitChosen = sheetSelected
+                exitDown = false; exitFails = 0; exitWaitUntil = 0L; exitWatchedAt = 0L
                 render()
-                refreshQuietly()   // the choice rides the fetch (X-Etha-Exit-Set); the box renames this phone's user and new connections take it
+                if (refreshing) exitFetchQueued = true else refreshQuietly()   // the choice rides a fetch that carries it (X-Etha-Exit-Set); one already running was built without it
             }
-            if (!running) onConnectClick()
+            if (!running && !connecting) onConnectClick()
         }
         dialog.setOnDismissListener { sheet = null; sheetFill = null }
         sheet = dialog
         dialog.show()
-        if (running) measureExits(offered)   // real figures, through the line in use
+        if (running) { measureExits(offered); view.postDelayed({ if (sheet === dialog) fill() }, 10_500L) }   // real figures, through the line in use; an unanswered row reads "unavailable" after ten seconds
     }
 
     private var sheetFill: (() -> Unit)? = null
@@ -760,6 +772,7 @@ class HomeActivity : HelperBaseActivity() {
     /** The countries measured through the line in use (EthaAuto.measureExits): "code=probe,…" to the service. */
     private fun measureExits(which: List<Exits.Exit>) {
         val spec = which.filter { it.probe.isNotEmpty() }.joinToString(",") { "${it.code}=${it.probe}" }
+        measureStartedAt = System.currentTimeMillis()
         if (spec.isNotEmpty()) MessageUtil.sendMsg2Service(this, AppConfig.MSG_ETHA_MEASURE_EXITS, spec)
     }
 
@@ -769,7 +782,8 @@ class HomeActivity : HelperBaseActivity() {
         if (got.isEmpty()) return
         Exits.rememberMeasured(got)
         val mine = Exits.shown()
-        if (mine.isNotEmpty() && Exits.byCode(mine)?.routed == true && mine in got) {
+        val lineOk = Exits.controlCode()?.let { got[it] }?.let { it > 0 } ?: true   // the box's own probe in the same batch: a dead line, not a dead country
+        if (mine.isNotEmpty() && Exits.byCode(mine)?.routed == true && mine in got && lineOk && !searching) {
             if (got.getValue(mine) <= 0) {
                 exitFails++
                 if (exitFails >= 2 && System.currentTimeMillis() > exitWaitUntil && !exitDown) { exitDown = true; render() }
@@ -786,7 +800,7 @@ class HomeActivity : HelperBaseActivity() {
         val now = System.currentTimeMillis()
         if (now - exitWatchedAt < 30_000L) return
         exitWatchedAt = now
-        measureExits(listOf(mine))
+        measureExits(listOfNotNull(mine, Exits.controlCode()?.let { Exits.byCode(it) }))   // with the box itself as the control
     }
 
     /** "Keep waiting": the red state put away for ten minutes; the country stays chosen. */
@@ -802,12 +816,17 @@ class HomeActivity : HelperBaseActivity() {
         val limit = p.getOrNull(0)?.toIntOrNull() ?: 0
         val active = p.getOrNull(1)?.toIntOrNull() ?: 0
         if (isFinishing) return
-        AlertDialog.Builder(this)
+        val text = getString(R.string.etha_devices_text, active, limit)
+        devicesDialog?.takeIf { it.isShowing }?.let { it.setMessage(text); return }   // one dialog, its numbers kept fresh
+        val now = System.currentTimeMillis()
+        if (now - devicesShownAt < 600_000L) return   // told ten minutes ago; the engine asks the box again every few minutes while it searches
+        devicesShownAt = now
+        devicesDialog = AlertDialog.Builder(this)
             .setTitle(R.string.etha_devices_title)
-            .setMessage(getString(R.string.etha_devices_text, active, limit))
+            .setMessage(text)
             .setPositiveButton(R.string.etha_devices_bot) { _, _ -> Utils.openUri(this, AppConfig.ETHA_SUPPORT_URL) }
             .setNegativeButton(android.R.string.ok, null)
-            .show()
+            .create().also { it.show() }
     }
 
     /** The update screen (3.0.0): the box says this version is below what the service supports (X-Etha-App-Min); one way out, the store. */

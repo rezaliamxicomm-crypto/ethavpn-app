@@ -40,4 +40,23 @@ class ExitsTest {
         assertEquals(mapOf("de" to "203.0.113.3", "us" to "203.0.113.21"), Exits.pairs("de=203.0.113.3, us=203.0.113.21,,bad"))
         assertEquals(emptyMap<String, String>(), Exits.pairs(null))
     }
+
+    @Test
+    fun aPendingChoiceIsSettledByTheConfirmationOrByTheFetchThatCarriedIt() {
+        assertEquals(true, Exits.settled("auto", "", null)); assertEquals(false, Exits.settled("auto", "us", null))
+        assertEquals(true, Exits.settled("us", "us", null)); assertEquals(false, Exits.settled("us", "", null))
+        assertEquals(true, Exits.settled("us", "", "us")); assertEquals(false, Exits.settled("us", "", "tr"))
+    }
+
+    @Test
+    fun theVersionComparison() {
+        assertEquals(true, Exits.isBelow("2.1.3", "3.0.0")); assertEquals(false, Exits.isBelow("3.0.0", "3.0.0")); assertEquals(false, Exits.isBelow("3.0.1", "3.0.0"))
+        assertEquals(true, Exits.isBelow("3.0", "3.0.1")); assertEquals(true, Exits.isBelow("v2.9.9-beta", "3.0.0"))
+    }
+
+    @Test
+    fun theParserTakesOddItems() {
+        val l = Exits.parse("de|Germany|DE|OK|x|203.0.113.3;us|United States|US|ok|90|203.0.113.21;")
+        assertEquals(listOf("de", "us"), l.map { it.code }); assertEquals("ok", l[0].state); assertEquals(0, l[0].rtt); assertEquals(false, l[0].routed); assertEquals(true, l[1].routed)
+    }
 }
