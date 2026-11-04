@@ -52,6 +52,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val lineLatency by lazy { MutableLiveData<Long>() }
     /** Auto's state: "searching" while no line answers, else "ok" (MSG_ETHA_STATE). */
     val autoState by lazy { MutableLiveData<String>() }
+    /** The countries measured through the line in use: "code=ms,…" (MSG_ETHA_EXITS_MEASURED, 3.0.0). */
+    val exitsMeasured by lazy { MutableLiveData<String>() }
+    /** The box refused the link for the device limit: "limit,active" (MSG_ETHA_DEVICES, 3.0.0). */
+    val devicesRefused by lazy { MutableLiveData<String>() }
 
     /**
      * Refer to the official documentation for [registerReceiver](https://developer.android.com/reference/androidx/core/content/ContextCompat#registerReceiver(android.content.Context,android.content.BroadcastReceiver,android.content.IntentFilter,int):
@@ -497,6 +501,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 AppConfig.MSG_ETHA_STATE -> {
                     autoState.value = intent.getStringExtra("content").orEmpty()
+                }
+
+                AppConfig.MSG_ETHA_EXITS_MEASURED -> {
+                    exitsMeasured.value = intent.getStringExtra("content").orEmpty()
+                }
+
+                AppConfig.MSG_ETHA_DEVICES -> {
+                    devicesRefused.value = intent.getStringExtra("content").orEmpty()
                 }
             }
         }

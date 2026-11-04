@@ -20,7 +20,7 @@ object EthaLinkFetch {
     const val HEAD_START_MS = 3_000L
     const val WAIT_MS = 25_000L              // longer than any way's own clock
 
-    data class Outcome(val response: UrlContentResponse?, val answered: Boolean, val way: String, val signedAt: Long = 0L, val status: Int = 0, val signed: Boolean = false)
+    data class Outcome(val response: UrlContentResponse?, val answered: Boolean, val way: String, val signedAt: Long = 0L, val status: Int = 0, val signed: Boolean = false, val body: String? = null)
 
     /** Pure: the hop's head start on a network — none where it won last time. */
     fun headStart(rememberedWay: String?): Long = if (rememberedWay == "hop") 0L else HEAD_START_MS
@@ -36,17 +36,17 @@ object EthaLinkFetch {
         val stored = EthaEchFetch.storedAddresses(subscriptionId)
         thread(isDaemon = true, name = "fetch-direct") {
             val r = EthaEchFetch.call(EthaEchFetch.buildRequest(url, stored, userAgent, headers = headers), "on the phone's network")
-            results.put(Outcome(EthaEchFetch.toResponse(r), EthaEchFetch.answered(r), "ech", r?.signedAt ?: 0L, r?.status ?: 0, EthaEchFetch.signedWord(r)))
+            results.put(Outcome(EthaEchFetch.toResponse(r), EthaEchFetch.answered(r), "ech", r?.signedAt ?: 0L, r?.status ?: 0, EthaEchFetch.signedWord(r), r?.body))
         }
         thread(isDaemon = true, name = "fetch-tunnel") {
             val proxy = EthaEchFetch.TunnelProxy("127.0.0.1:${SettingsManager.getHttpPort()}", SettingsManager.getSocksUsername(), SettingsManager.getSocksPassword())
             val r = EthaEchFetch.call(EthaEchFetch.buildRequest(url, stored, userAgent, proxy, headers), "through the tunnel")
-            results.put(Outcome(EthaEchFetch.toResponse(r), EthaEchFetch.answered(r), "tunnel", r?.signedAt ?: 0L, r?.status ?: 0, EthaEchFetch.signedWord(r)))
+            results.put(Outcome(EthaEchFetch.toResponse(r), EthaEchFetch.answered(r), "tunnel", r?.signedAt ?: 0L, r?.status ?: 0, EthaEchFetch.signedWord(r), r?.body))
         }
         thread(isDaemon = true, name = "fetch-hop") {
             if (head > 0) Thread.sleep(head)
             val o = EthaHopFetch.fetch(token, userAgent, headers)
-            results.put(Outcome(o.response, o.answered, "hop", o.signedAt, o.status, o.signed))
+            results.put(Outcome(o.response, o.answered, "hop", o.signedAt, o.status, o.signed, o.body))
         }
         // The replay rules (2.1): an answer signed before the one this phone already holds is never taken (a hop serving
         // last week's answer); one signed longer ago than ETHA_SIGNED_STALE_SEC is kept aside and taken only when no

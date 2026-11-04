@@ -150,6 +150,62 @@
                 app:trackThickness="3dp" />
             </FrameLayout>
 
+            <!-- 3.0.0: the Servers box — where this phone's traffic leaves (handler/Exits); a tap opens the sheet. Shown once the box offers a country. -->
+            <LinearLayout
+                android:id="@+id/box_server"
+                android:layout_width="match_parent"
+                android:layout_height="60dp"
+                android:layout_marginStart="12dp"
+                android:layout_marginTop="14dp"
+                android:layout_marginEnd="12dp"
+                android:background="@drawable/bg_auto_card"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/tv_server_flag"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="22sp"
+                    android:text="\uD83C\uDF10" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/EthaLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.08"
+                        android:text="@string/etha_server_label"
+                        android:textAllCaps="true" />
+
+                    <TextView
+                        android:id="@+id/tv_server_name"
+                        style="@style/EthaBody"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="15sp"
+                        android:text="@string/etha_server_auto" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_chevron_right_20dp"
+                    app:tint="@color/etha_muted" />
+            </LinearLayout>
+
             <!-- the two things a customer can do: measure every line now, fetch the configs again -->
             <LinearLayout
                 android:layout_width="match_parent"

@@ -530,6 +530,18 @@ object AngConfigManager {
     /** A signed 403 for our link (2.1.2): the subscription ended — the box's own word, which no hop can forge. The account card says
      *  so at once (the expiry set to the past; a renewal's fetch sets it right again), the running engine stops looking for a line that
      *  cannot come back (EthaAuto.onExpired), and the lines stay for the day the link is renewed — the same link. A failure to the caller. */
+    /** A signed 403 (3.0.0): the device limit's refusal carries `{"detail":"devices","limit":…,"active":…}` — the phone is over its
+     *  subscription's limit; the screen says so (MSG_ETHA_DEVICES) and nothing is marked expired. Any other signed 403: expired, as before. */
+    private fun refused(it: SubscriptionCache, body: String?): SubscriptionUpdateResult {
+        Exits.devicesRefusal(body)?.let { (limit, active) ->
+            LogUtil.w(AppConfig.TAG, "Subscription answered 403 with the box's word: the device limit ($active of $limit)")
+            MmkvManager.encodeSettings(AppConfig.PREF_ETHA_DEVICES, "$limit,$active,${System.currentTimeMillis()}")
+            MessageUtil.sendMsg2UI(AngApplication.application, AppConfig.MSG_ETHA_DEVICES, "$limit,$active")
+            return SubscriptionUpdateResult(failureCount = 1)
+        }
+        return expired(it)
+    }
+
     private fun expired(it: SubscriptionCache): SubscriptionUpdateResult {
         LogUtil.w(AppConfig.TAG, "Subscription answered 403 with the box's word: expired")
         it.subscription.expire = System.currentTimeMillis() / 1000 - 1    // not lastUpdated: the Home screen refreshes an ended card on every open, so a renewal is seen
@@ -590,11 +602,14 @@ object AngConfigManager {
                 if (report.isNotEmpty()) put(AppConfig.ETHA_LINES_HEADER, report)
                 EthaDevice.hash(AngApplication.application)?.let { put(AppConfig.ETHA_DEVICE_HEADER, it) }
                 EthaNetwork.carrier(signature)?.let { put(AppConfig.ETHA_CARRIER_HEADER, it) }
+                Exits.want()?.let { put(AppConfig.ETHA_EXIT_SET_HEADER, it) }     // the Servers box (3.0.0): this phone's choice, until the box confirms it
+                put(AppConfig.ETHA_MODEL_HEADER, EthaDevice.model())              // the operator's device card: the phone's model and OS version
+                put(AppConfig.ETHA_OS_HEADER, EthaDevice.os())
             }
             var response = if (ours) {
                 val outcome = EthaLinkFetch.fetch(url, it.guid, userAgent, extraHeaders, signature)
                 answered = outcome.answered
-                if (outcome.answered && outcome.signed && outcome.status == 403) return expired(it)   // the box's own word: the subscription ended (2.1.2)
+                if (outcome.answered && outcome.signed && outcome.status == 403) return refused(it, outcome.body)   // the box's own word: the subscription ended, or the device limit (3.0.0)
                 // the report is spent only when the box could file it under this phone's network: a fetch that won through the
                 // tunnel reaches the box from its own address and is filed as "through the tunnel" (ignored for the ranking) —
                 // and only when it is still the same report (Auto may have written a newer one meanwhile)
@@ -625,7 +640,7 @@ object AngConfigManager {
                     val held = MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_SIGNED_AT)?.toLongOrNull() ?: 0L
                     val verdict = if (EthaHopFetch.answered(r)) EthaLinkFetch.replayVerdict(r!!.signedAt, held, System.currentTimeMillis() / 1000) else "none"
                     val taken = verdict == "fresh" || verdict == "stale"
-                    if (taken && r!!.status == 403) return expired(it)   // the box's own word by the last resort too (2.1.2)
+                    if (taken && r!!.status == 403) return refused(it, r.body)   // the box's own word by the last resort too (2.1.2)
                     if (taken) {
                         if (report.isNotEmpty() && MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_LINE_REPORT) == report) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, "")
                         EthaLinkFetch.rememberSigned(r!!.signedAt)
@@ -664,6 +679,7 @@ object AngConfigManager {
                 EthaSubscription.applyHeaders(it.subscription, response.headers)
                 response.headers[AppConfig.ETHA_AUTO_HEADER]?.let { v -> MmkvManager.encodeSettings(AppConfig.PREF_ETHA_AUTO_POLICY, v.trim()) }   // Auto's policy (AutoPolicy)
                 if (ours) EthaHopFetch.remember(response.headers)   // where the link hop inside Iran is now, for the next time nothing else answers
+                if (ours) Exits.remember(response.headers)   // the countries on offer, the box's word of this phone's choice, the lowest app version (3.0.0)
                 if (ours) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_HINT, response.headers[AppConfig.ETHA_HINT_HEADER]?.trim()?.takeIf { Hint.parse(it) != null }.orEmpty())   // the box's advice for Auto (Hint); none this fetch: none kept
                 MmkvManager.encodeSubscription(it.guid, it.subscription)
                 LogUtil.i(AppConfig.TAG, "Subscription updated: ${it.subscription.remarks}, $count configs")

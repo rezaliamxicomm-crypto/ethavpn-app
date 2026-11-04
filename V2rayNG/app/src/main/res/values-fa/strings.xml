@@ -563,4 +563,20 @@
     <string name="etha_ready_ms">آماده · %d میلی‌ثانیه</string>
     <string name="etha_just_now">همین حالا</string>
     <string name="etha_refreshed">کانفیگ‌ها بروز شد</string>
+    <!-- 3.0.0 -->
+    <string name="etha_server_label">سرور</string>
+    <string name="etha_server_connect">اتصال</string>
+    <string name="etha_server_switch">تغییر</string>
+    <string name="etha_server_unavailable">در دسترس نیست</string>
+    <string name="etha_server_measuring">در حال اندازه‌گیری…</string>
+    <string name="etha_server_unreachable">%s در دسترس نیست</string>
+    <string name="etha_switch_server">تغییر سرور</string>
+    <string name="etha_keep_waiting">منتظر بمان</string>
+    <string name="etha_exit_down_hint">سروری که انتخاب کرده‌اید پاسخ نمی‌دهد. سرور دیگری انتخاب کنید یا منتظر بمانید.</string>
+    <string name="etha_devices_title">سقف دستگاه‌ها پر شده</string>
+    <string name="etha_devices_text">این لینک هم‌اکنون روی %1$d گوشی استفاده می‌شود؛ سقف %2$d است. یکی از گوشی‌ها را در ربات تلگرام حذف کنید یا از پشتیبانی بپرسید.</string>
+    <string name="etha_devices_bot">باز کردن ربات</string>
+    <string name="etha_update_title">به‌روزرسانی اسکای‌ری</string>
+    <string name="etha_update_text">این نسخه دیگر با سرویس کار نمی‌کند. برای ادامه‌ی اتصال به‌روزرسانی کنید.</string>
+    <string name="etha_update_now">به‌روزرسانی</string>
 </resources>

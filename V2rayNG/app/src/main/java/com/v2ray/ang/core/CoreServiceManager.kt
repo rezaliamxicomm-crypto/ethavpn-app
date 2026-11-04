@@ -587,6 +587,10 @@ object CoreServiceManager {
                 AppConfig.MSG_ETHA_EXPIRED -> {
                     auto?.onExpired(intent?.getStringExtra("content").orEmpty())   // the box said the subscription ended: nothing to look for (2.1.2)
                 }
+
+                AppConfig.MSG_ETHA_MEASURE_EXITS -> {
+                    auto?.measureExits(intent?.getStringExtra("content").orEmpty())   // the Servers sheet: the countries measured through the line in use (3.0.0)
+                }
             }
 
             when (intent?.action) {

@@ -584,4 +584,20 @@
     <string name="etha_ready_ms">Готово · %d мс</string>
     <string name="etha_just_now">только что</string>
     <string name="etha_refreshed">Конфиги обновлены</string>
+    <!-- 3.0.0 -->
+    <string name="etha_server_label">Сервер</string>
+    <string name="etha_server_connect">Подключить</string>
+    <string name="etha_server_switch">Сменить</string>
+    <string name="etha_server_unavailable">недоступен</string>
+    <string name="etha_server_measuring">измеряем…</string>
+    <string name="etha_server_unreachable">%s недоступен</string>
+    <string name="etha_switch_server">Сменить сервер</string>
+    <string name="etha_keep_waiting">Подождать</string>
+    <string name="etha_exit_down_hint">Выбранный сервер не отвечает. Выберите другой или подождите.</string>
+    <string name="etha_devices_title">Достигнут лимит устройств</string>
+    <string name="etha_devices_text">Эта ссылка уже используется на %1$d телефонах; лимит — %2$d. Удалите телефон в Telegram-боте или обратитесь в поддержку.</string>
+    <string name="etha_devices_bot">Открыть бота</string>
+    <string name="etha_update_title">Обновите SkyRay</string>
+    <string name="etha_update_text">Эта версия больше не работает с сервисом. Обновите, чтобы подключаться дальше.</string>
+    <string name="etha_update_now">Обновить</string>
 </resources>

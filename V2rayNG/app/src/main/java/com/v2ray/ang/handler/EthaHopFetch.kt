@@ -76,7 +76,7 @@ object EthaHopFetch {
         if (token.isEmpty()) return EthaEchFetch.Outcome(null, false)
         for (hop in hops()) {
             val result = EthaEchFetch.call(buildRequest(token, hop, userAgent, headers), "through the hop ${hop.host}")
-            if (answered(result)) return EthaEchFetch.Outcome(toResponse(result), true, result?.signedAt ?: 0L, result?.status ?: 0, EthaEchFetch.signedWord(result))
+            if (answered(result)) return EthaEchFetch.Outcome(toResponse(result), true, result?.signedAt ?: 0L, result?.status ?: 0, EthaEchFetch.signedWord(result), result?.body)
         }
         return EthaEchFetch.Outcome(null, false)
     }

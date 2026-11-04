@@ -37,7 +37,7 @@ object EthaEchFetch {
     data class TunnelProxy(val address: String, val user: String? = null, val password: String? = null)
 
     /** What a fetch came to: the subscription, when there is one, whether the server answered at all (any status), and when the box signed the answer (0 unsigned). */
-    data class Outcome(val response: UrlContentResponse?, val answered: Boolean, val signedAt: Long = 0L, val status: Int = 0, val signed: Boolean = false)
+    data class Outcome(val response: UrlContentResponse?, val answered: Boolean, val signedAt: Long = 0L, val status: Int = 0, val signed: Boolean = false, val body: String? = null)
 
     /**
      * `url` fetched with ECH, on the phone's network and then through the tunnel. `response` is the body and headers

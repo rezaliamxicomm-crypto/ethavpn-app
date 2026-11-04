@@ -36,6 +36,11 @@ import com.v2ray.ang.enums.PermissionType
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.view.LayoutInflater
+import com.v2ray.ang.handler.Exits
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.v2ray.ang.handler.AutoSelect
 import com.v2ray.ang.handler.EthaReport
 import com.v2ray.ang.handler.EthaSubscription
@@ -86,6 +91,14 @@ class HomeActivity : HelperBaseActivity() {
     private var latencyMs = 0L            // the line in use's last time: ms, -1 failed, 0 none yet
     private var latencyAt = 0L
     private var outcome = 0               // the string under the buttons after a test, 0 = none
+    // 3.0.0: the Servers box — the phone's exit (Exits); its own exit watched through its probe while connected
+    private var exitDown = false
+    private var exitFails = 0
+    private var exitWaitUntil = 0L
+    private var exitWatchedAt = 0L
+    private var sheet: BottomSheetDialog? = null
+    private var sheetSelected = ""
+    private var updateShown = false
     private var updateResult: CheckUpdateResult? = null
     private var pulse: AnimatorSet? = null         // the halo's slow breath while connected
     private var rateOnLatency = false              // the customer just connected by hand: the first time that lands decides the rating ask
@@ -116,8 +129,9 @@ class HomeActivity : HelperBaseActivity() {
         binding.btnConnect.setOnClickListener { onConnectClick() }
         binding.btnPaste.setOnClickListener { pasteLink() }
         binding.btnScan.setOnClickListener { scanLink() }
-        binding.btnRefresh.setOnClickListener { refreshServers() }
-        binding.btnTest.setOnClickListener { testLatency() }
+        binding.btnRefresh.setOnClickListener { if (exitDown) keepWaiting() else refreshServers() }
+        binding.btnTest.setOnClickListener { if (exitDown) openServers() else testLatency() }
+        binding.boxServer.setOnClickListener { openServers() }   // 3.0.0: the Servers box
         binding.btnRenew.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_RENEW_URL) }
         binding.btnSupport.setOnClickListener { Utils.openUri(this, AppConfig.ETHA_SUPPORT_URL) }
         // The hero has the height the phone leaves over (activity_home.xml): the disc with its halo grows with it, up
@@ -156,6 +170,8 @@ class HomeActivity : HelperBaseActivity() {
             render()
         }
         mainViewModel.lineSwitched.observe(this) { render() }
+        mainViewModel.exitsMeasured.observe(this) { onExitsMeasured(it) }
+        mainViewModel.devicesRefused.observe(this) { showDevicesLimit(it) }
         mainViewModel.roundDone.observe(this) { result ->
             testing = false
             outcome = when (result) {
@@ -185,6 +201,7 @@ class HomeActivity : HelperBaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        maybeShowUpdate()
         refreshSubscription()
         render()
         refreshQuietlyIfStale()
@@ -200,6 +217,7 @@ class HomeActivity : HelperBaseActivity() {
     private val watch = object : Runnable {
         override fun run() {
             if (mainViewModel.isRunning.value == true) MessageUtil.sendMsg2Service(this@HomeActivity, AppConfig.MSG_ETHA_WATCH, "")
+            maybeWatchExit()   // 3.0.0: the chosen country's probe every 30 s
             binding.root.postDelayed(this, 10_000L)
         }
     }
@@ -259,6 +277,7 @@ class HomeActivity : HelperBaseActivity() {
             when {
                 connecting -> R.string.etha_state_connecting
                 running && expired -> R.string.etha_state_expired
+                running && exitDown -> R.string.etha_state_not_connected   // the chosen country does not answer (3.0.0)
                 running && searching -> R.string.etha_state_searching
                 running -> R.string.etha_state_connected
                 else -> R.string.etha_state_not_connected
@@ -272,6 +291,7 @@ class HomeActivity : HelperBaseActivity() {
         binding.btnConnect.isEnabled = !connecting
         val disc = when {
             running && expired -> R.color.etha_red
+            running && exitDown -> R.color.etha_red
             running && searching -> R.color.etha_amber
             running -> R.color.etha_green
             else -> R.color.etha_blue
@@ -279,6 +299,7 @@ class HomeActivity : HelperBaseActivity() {
         binding.btnConnect.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, disc))
         binding.halo.setBackgroundResource(
             when {
+                running && exitDown -> R.drawable.bg_halo_red
                 running && (searching || expired) -> R.drawable.bg_halo_amber
                 running -> R.drawable.bg_halo_green
                 else -> R.drawable.bg_halo_blue
@@ -287,8 +308,10 @@ class HomeActivity : HelperBaseActivity() {
         pulseHalo(running)
         binding.progress.isVisible = busy
         binding.btnTest.isEnabled = !empty && !testing && !connecting
-        binding.btnTest.text = getString(if (testing) R.string.etha_testing else R.string.etha_test_latency)
+        binding.btnTest.text = getString(if (exitDown) R.string.etha_switch_server else if (testing) R.string.etha_testing else R.string.etha_test_latency)
         binding.btnRefresh.isEnabled = !empty && !refreshing && !connecting
+        binding.btnRefresh.text = getString(if (exitDown) R.string.etha_keep_waiting else R.string.etha_refresh)
+        renderServerBox(running)
         renderChip()
         renderOutcome()
         if (s != null) renderAccount(s.subscription)
@@ -319,6 +342,7 @@ class HomeActivity : HelperBaseActivity() {
         when {
             testing -> styleChip(chip, red = false, text = getString(R.string.etha_testing))
             expired -> styleChip(chip, red = true, text = getString(R.string.etha_expired_short))
+            exitDown -> styleChip(chip, red = true, text = getString(R.string.etha_server_unreachable, Exits.byCode(Exits.shown())?.name ?: ""))
             searching -> styleChip(chip, red = true, text = getString(R.string.etha_no_line_answers) + " · " + ago(latencyAt))
             latencyAt == 0L -> styleChip(chip, red = false, text = getString(R.string.etha_state_connecting))   // the first measurement is on its way
             latencyMs > 0 -> styleChip(chip, red = false, text = "$latencyMs ms · " + ago(latencyAt))
@@ -344,6 +368,7 @@ class HomeActivity : HelperBaseActivity() {
         val running = mainViewModel.isRunning.value == true
         val text = when {
             running && expired -> getString(R.string.etha_expired_hint)
+            running && exitDown -> getString(R.string.etha_exit_down_hint)
             running && searching -> getString(if (outage) R.string.etha_lines_blocked else R.string.etha_searching_hint)   // the box's word when every phone of the network fails
             outcome != 0 -> getString(outcome)
             else -> ""
@@ -652,11 +677,149 @@ class HomeActivity : HelperBaseActivity() {
     private fun afterFetch() {
         refreshSubscription()
         render()
+        maybeShowUpdate()
         SubscriptionUpdater.sync(forceReschedule = true)   // the background refresh, timed from this fetch
         if (MmkvManager.decodeSettingsBool(AppConfig.PREF_ETHA_LINES_CHANGED, false)) {
             MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINES_CHANGED, false)
             if (mainViewModel.isRunning.value == true) restartCore()   // the core holds the set it started with
         }
+    }
+
+    // ---------------------------------------------------------------- the Servers box (3.0.0)
+
+    /** The box under the chip: the flag and the name of the country this phone leaves from — the pending choice, else the box's word; Auto
+     *  with the globe. Shown once the box offers a second country; red while the chosen one does not answer. */
+    private fun renderServerBox(running: Boolean) {
+        val offered = Exits.offered()
+        binding.boxServer.isVisible = binding.hero.isVisible && offered.size >= 2
+        if (!binding.boxServer.isVisible) return
+        val exit = Exits.byCode(Exits.shown())
+        binding.tvServerFlag.text = if (exit != null) Exits.flag(exit.country) else "🌐"
+        binding.tvServerName.text = exit?.name ?: getString(R.string.etha_server_auto)
+        binding.boxServer.setBackgroundResource(if (running && exitDown) R.drawable.bg_server_box_red else R.drawable.bg_auto_card)
+    }
+
+    /** The Servers sheet: Auto and every country on offer with its measured latency (connected: measured now through the line in use;
+     *  otherwise the last figures, greyed), the chosen one ticked; the button connects or switches. */
+    private fun openServers() {
+        val offered = Exits.offered()
+        if (offered.isEmpty() || sheet != null) return
+        val running = mainViewModel.isRunning.value == true
+        sheetSelected = Exits.shown()
+        val dialog = BottomSheetDialog(this)
+        val view = LayoutInflater.from(this).inflate(R.layout.sheet_servers, null)
+        dialog.setContentView(view)
+        val rows = view.findViewById<LinearLayout>(R.id.exit_rows)
+        val go = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_exit_go)
+        go.text = getString(if (running) R.string.etha_server_switch else R.string.etha_server_connect)
+        fun fill() {
+            rows.removeAllViews()
+            val measured = Exits.measured()
+            val entries = listOf<Exits.Exit?>(null) + offered
+            for (e in entries) {
+                val row = LayoutInflater.from(this).inflate(R.layout.item_exit, rows, false)
+                val code = e?.code ?: ""
+                row.findViewById<TextView>(R.id.tv_flag).text = if (e != null) Exits.flag(e.country) else "🌐"
+                row.findViewById<TextView>(R.id.tv_name).text = e?.name ?: getString(R.string.etha_server_auto)
+                val ms = row.findViewById<TextView>(R.id.tv_ms)
+                val m = if (e != null) measured[e.code] else null
+                ms.text = when {
+                    e == null -> ""
+                    !e.ok -> getString(R.string.etha_server_unavailable)
+                    m == null -> if (running) getString(R.string.etha_server_measuring) else ""
+                    m <= 0 -> getString(R.string.etha_server_unavailable)
+                    else -> "$m ms"
+                }
+                ms.setTextColor(ContextCompat.getColor(this, if (running && m != null && m > 0) R.color.etha_green_light else R.color.etha_muted))
+                row.findViewById<ImageView>(R.id.iv_tick).isVisible = code == sheetSelected
+                row.setBackgroundResource(if (code == sheetSelected) R.drawable.bg_auto_card else R.drawable.bg_panel)
+                row.setOnClickListener { sheetSelected = code; fill() }
+                rows.addView(row)
+            }
+        }
+        fill()
+        sheetFill = ::fill
+        go.setOnClickListener {
+            dialog.dismiss()
+            if (sheetSelected != Exits.shown()) {
+                Exits.choose(sheetSelected)
+                exitDown = false; exitFails = 0
+                render()
+                refreshQuietly()   // the choice rides the fetch (X-Etha-Exit-Set); the box renames this phone's user and new connections take it
+            }
+            if (!running) onConnectClick()
+        }
+        dialog.setOnDismissListener { sheet = null; sheetFill = null }
+        sheet = dialog
+        dialog.show()
+        if (running) measureExits(offered)   // real figures, through the line in use
+    }
+
+    private var sheetFill: (() -> Unit)? = null
+
+    /** The countries measured through the line in use (EthaAuto.measureExits): "code=probe,…" to the service. */
+    private fun measureExits(which: List<Exits.Exit>) {
+        val spec = which.filter { it.probe.isNotEmpty() }.joinToString(",") { "${it.code}=${it.probe}" }
+        if (spec.isNotEmpty()) MessageUtil.sendMsg2Service(this, AppConfig.MSG_ETHA_MEASURE_EXITS, spec)
+    }
+
+    /** The service's answer: kept for the sheet, shown if it is open; the phone's own country failing twice in a row is the red state. */
+    private fun onExitsMeasured(raw: String) {
+        val got = Exits.pairs(raw).mapNotNull { (k, v) -> v.toLongOrNull()?.let { k to it } }.toMap()
+        if (got.isEmpty()) return
+        Exits.rememberMeasured(got)
+        val mine = Exits.shown()
+        if (mine.isNotEmpty() && Exits.byCode(mine)?.routed == true && mine in got) {
+            if (got.getValue(mine) <= 0) {
+                exitFails++
+                if (exitFails >= 2 && System.currentTimeMillis() > exitWaitUntil && !exitDown) { exitDown = true; render() }
+            } else if (exitFails > 0 || exitDown) { exitFails = 0; exitDown = false; render() }
+        }
+        sheetFill?.invoke()
+    }
+
+    /** Every 30 s while connected on a country of its own: its probe through the line in use (the chip's watch runnable calls this every 10 s). */
+    private fun maybeWatchExit() {
+        if (mainViewModel.isRunning.value != true) return
+        val mine = Exits.byCode(Exits.shown()) ?: return
+        if (!mine.routed) { if (exitDown) { exitDown = false; exitFails = 0; render() }; return }
+        val now = System.currentTimeMillis()
+        if (now - exitWatchedAt < 30_000L) return
+        exitWatchedAt = now
+        measureExits(listOf(mine))
+    }
+
+    /** "Keep waiting": the red state put away for ten minutes; the country stays chosen. */
+    private fun keepWaiting() {
+        exitWaitUntil = System.currentTimeMillis() + 600_000L
+        exitDown = false; exitFails = 0
+        render()
+    }
+
+    /** The device limit (3.0.0): the box refused the link because this subscription is on more phones than allowed. */
+    private fun showDevicesLimit(raw: String) {
+        val p = raw.split(",")
+        val limit = p.getOrNull(0)?.toIntOrNull() ?: 0
+        val active = p.getOrNull(1)?.toIntOrNull() ?: 0
+        if (isFinishing) return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.etha_devices_title)
+            .setMessage(getString(R.string.etha_devices_text, active, limit))
+            .setPositiveButton(R.string.etha_devices_bot) { _, _ -> Utils.openUri(this, AppConfig.ETHA_SUPPORT_URL) }
+            .setNegativeButton(android.R.string.ok, null)
+            .show()
+    }
+
+    /** The update screen (3.0.0): the box says this version is below what the service supports (X-Etha-App-Min); one way out, the store. */
+    private fun maybeShowUpdate() {
+        if (updateShown || isFinishing || !Exits.updateDue()) return
+        updateShown = true
+        AlertDialog.Builder(this)
+            .setTitle(R.string.etha_update_title)
+            .setMessage(R.string.etha_update_text)
+            .setCancelable(false)
+            .setPositiveButton(R.string.etha_update_now) { _, _ -> Updates.open(this); updateShown = false }
+            .show()
     }
 
     // ---------------------------------------------------------------- the rating ask

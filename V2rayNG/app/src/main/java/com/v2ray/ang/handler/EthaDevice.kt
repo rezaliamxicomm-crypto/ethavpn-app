@@ -1,6 +1,7 @@
 package com.v2ray.ang.handler
 
 import android.content.Context
+import android.os.Build
 import android.provider.Settings
 import java.security.MessageDigest
 
@@ -20,6 +21,12 @@ object EthaDevice {
         val d = MessageDigest.getInstance("SHA-256").digest("$v:$pkg".toByteArray(Charsets.UTF_8))
         return d.joinToString("") { "%02x".format(it) }.take(16)
     }
+
+    /** The phone's model for the operator's device card (X-Etha-Model, 3.0.0): printable, short, nothing that names the person. */
+    fun model(): String = "${Build.MANUFACTURER} ${Build.MODEL}".trim().replace(Regex("[^\\x20-\\x7E]"), "").take(48)
+
+    /** The OS version (X-Etha-OS). */
+    fun os(): String = "Android ${Build.VERSION.RELEASE}".take(32)
 
     /** This install's code, computed once; null when the phone gives no id. */
     fun hash(context: Context): String? = cached ?: try {

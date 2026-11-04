@@ -791,6 +791,26 @@ class EthaAuto(
         }
     }
 
+    /** The Servers sheet (3.0.0): each country's probe measured through the line in use — a HEAD to http://<probe>/exit, no fallback (a dead
+     *  card fails), one country at a time under the measuring mutex like every measurement; the answer to the UI as "code=ms,…" (-1 failed). */
+    fun measureExits(spec: String) {
+        if (stopped) return
+        val wanted = spec.split(",").mapNotNull { it.trim().split("=", limit = 2).takeIf { p -> p.size == 2 && p[0].isNotEmpty() && p[1].isNotEmpty() } }
+        if (wanted.isEmpty()) return
+        scope.launch {
+            measuring.withLock {
+                if (stopped) return@withLock
+                val line = byGuid[current] ?: return@withLock
+                val out = wanted.joinToString(",") { (code, ip) ->
+                    val ms = try { measureOnce(listOf(line), 1, "http://$ip${AppConfig.ETHA_EXIT_PROBE_PATH}", 4_000L)[line.guid] ?: -1L } catch (_: Exception) { -1L }
+                    "$code=$ms"
+                }
+                LogUtil.i(AppConfig.TAG, "Auto: the countries measured through ${nameOf(current)}: $out")
+                MessageUtil.sendMsg2UI(service, AppConfig.MSG_ETHA_EXITS_MEASURED, out)
+            }
+        }
+    }
+
     /** The line in use's time to the UI: the chip's number. */
     private fun tellLatency() {
         if (stopped) return

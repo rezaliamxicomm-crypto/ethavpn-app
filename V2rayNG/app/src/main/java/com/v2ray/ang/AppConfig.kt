@@ -150,6 +150,15 @@ object AppConfig {
     const val ETHA_LINES_HEADER = "X-Etha-Lines"              // what Auto measured, on the next fetch (EthaReport); the box stores it
     const val ETHA_DEVICE_HEADER = "X-Etha-Device"            // this phone as a code on every fetch of our link (EthaDevice: a hash, never the id); the box counts the phones a link is on (2.1.2)
     const val ETHA_CARRIER_HEADER = "X-Etha-Carrier"          // the SIM's MCC-MNC on mobile data (EthaNetwork.carrier): the phone's network when its fetch's address says nothing (2.1.2)
+    // The Servers box (3.0.0, handler/Exits): the countries the box offers and where this phone leaves; the box's probe for the sheet
+    const val ETHA_EXITS_HEADER = "x-etha-exits"            // code|name|country|state|rtt|probe;… (signed like every x-etha-* header)
+    const val ETHA_EXIT_HEADER = "x-etha-exit"              // the box's word of this phone's choice ("" = Auto)
+    const val ETHA_EXIT_SET_HEADER = "X-Etha-Exit-Set"      // this phone's choice, on the next fetch (a code, or "auto"); the box renames the phone's user
+    const val ETHA_APP_MIN_HEADER = "x-etha-app-min"        // android=3.0.0;ios=3.0.0: below it the update screen
+    const val ETHA_MODEL_HEADER = "X-Etha-Model"            // the phone's model and OS version, for the operator's device card (never an id)
+    const val ETHA_OS_HEADER = "X-Etha-OS"
+    const val ETHA_PROBE_BOX_IP = "203.0.113.3"              // the box itself in the sheet's probes (an exit's is its own address, routed to its card)
+    const val ETHA_EXIT_PROBE_PATH = "/exit"                 // a country's probe: HEAD http://<probe>/exit through the line in use — no fallback, a dead card fails
     const val ETHA_PULL_URL = "http://203.0.113.1/blob/256k"  // the pull (2.1.2): a Range of the box's blob through one line, the bytes counted — the second opinion a HEAD cannot give
     // Our own link is fetched with Encrypted Client Hello enforced (EthaEchFetch → the core's FetchSubscriptionEch,
     // echfetch/ in this repo), on the phone's own network and then through the tunnel; only when nobody answered on
@@ -221,6 +230,12 @@ object AppConfig {
     const val PREF_ETHA_FETCH_WAY = "pref_etha_fetch_way:"      // + a network signature: which fetch way answered there last (EthaLinkFetch)
     const val PREF_ETHA_LINES_FP = "pref_etha_lines_fp"         // the fingerprint of the line set the last fetch stored (EthaReport.fingerprint)
     const val PREF_ETHA_LINES_CHANGED = "pref_etha_lines_changed"   // true after a fetch changed the line set: the running core must be restarted
+    const val PREF_ETHA_EXITS = "pref_etha_exits"               // the last X-Etha-Exits (Exits)
+    const val PREF_ETHA_EXIT = "pref_etha_exit"                 // the box's word of this phone's choice
+    const val PREF_ETHA_EXIT_WANT = "pref_etha_exit_want"       // a choice the box has not confirmed yet ("auto" for none)
+    const val PREF_ETHA_EXIT_MS = "pref_etha_exit_ms"           // code=ms,… the countries' last measured latencies (greyed before connecting)
+    const val PREF_ETHA_APP_MIN = "pref_etha_app_min"           // the last X-Etha-App-Min
+    const val PREF_ETHA_DEVICES = "pref_etha_devices"           // the last device-limit refusal: limit,active,when
     // The rating ask (handler/RatePrompt): the phone's, not the account's — "Delete account" leaves them
     const val PREF_ETHA_RATE_CONNECTS = "pref_etha_rate_connects"            // connections that worked, made by hand
     const val PREF_ETHA_RATE_FIRST_AT = "pref_etha_rate_first_at"            // when the first of them was
@@ -282,6 +297,9 @@ object AppConfig {
     const val MSG_ETHA_STATE = 86           // service → UI: "searching" (no line answers; Auto keeps trying), "outage" (the same, and the box says the network blocks every line) or "ok"
     const val MSG_ETHA_WATCH = 87           // UI → service: the Home screen is showing the chip; the line in use is kept fresh for it (every 10 s while shown)
     const val MSG_ETHA_FETCHED = 88         // app → service: our link answered (content: the subscription's guid); the engine reads the fresh advice (2.1.2)
+    const val MSG_ETHA_MEASURE_EXITS = 90   // UI → service: measure these countries through the line in use (content: "code=probe,…"; Exits, 3.0.0)
+    const val MSG_ETHA_EXITS_MEASURED = 91  // service → UI: "code=ms,…" (-1 failed)
+    const val MSG_ETHA_DEVICES = 93         // fetch → UI: the box refused the link for the device limit (content: "limit,active")
     const val MSG_ETHA_EXPIRED = 89         // app → service: the box said the subscription ended, a signed 403 (content: its guid); the engine stops looking (2.1.2)
 
     /** Notification channel IDs and names. */

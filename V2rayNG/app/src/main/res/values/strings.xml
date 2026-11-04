@@ -587,4 +587,20 @@
     <string name="etha_ready_ms">Ready · %d ms</string>
     <string name="etha_just_now">just now</string>
     <string name="etha_refreshed">Configs updated</string>
+    <!-- 3.0.0: the Servers box (handler/Exits), the device limit, the update screen -->
+    <string name="etha_server_label">Server</string>
+    <string name="etha_server_connect">Connect</string>
+    <string name="etha_server_switch">Switch</string>
+    <string name="etha_server_unavailable">unavailable</string>
+    <string name="etha_server_measuring">measuring…</string>
+    <string name="etha_server_unreachable">%s is unreachable</string>
+    <string name="etha_switch_server">Switch server</string>
+    <string name="etha_keep_waiting">Keep waiting</string>
+    <string name="etha_exit_down_hint">The server you chose is not answering. Switch to another, or wait.</string>
+    <string name="etha_devices_title">Device limit reached</string>
+    <string name="etha_devices_text">This link is already in use on %1$d phones; the limit is %2$d. Remove a phone in the Telegram bot, or ask support.</string>
+    <string name="etha_devices_bot">Open the bot</string>
+    <string name="etha_update_title">Update SkyRay</string>
+    <string name="etha_update_text">This version no longer works with the service. Update to keep connecting.</string>
+    <string name="etha_update_now">Update</string>
 </resources>
