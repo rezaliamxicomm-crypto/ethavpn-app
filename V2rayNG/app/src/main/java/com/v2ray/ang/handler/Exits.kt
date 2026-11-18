@@ -7,7 +7,9 @@ import com.v2ray.ang.BuildConfig
  * The Servers box (3.0.0): where this phone's traffic leaves the network — a country the box offers (the header X-Etha-Exits:
  * `code|name|country|state|rtt|probe;…`), chosen on the phone and sent to the box on the next fetch (X-Etha-Exit-Set), the
  * box's word of the choice coming back as X-Etha-Exit. Germany is the box itself; every other country is a second hop the
- * box routes this phone's own user through, so a choice needs no new lines and no reconnect — new connections take it.
+ * box routes this phone's own user through, so a choice needs no new lines — new connections take it. A connection that is
+ * already open stays on the country it was opened through, so when the box's word changes the running core is restarted
+ * (3.0.1: the lines-changed path — `moved`): everything the phone has open is dialled again and leaves from the new country.
  * The latencies are measured, never computed: a HEAD to each country's probe address through the line in use
  * (EthaAuto.measureExits), kept here for the sheet before the next measurement. The pure parts are covered by JVM tests.
  */
@@ -76,11 +78,18 @@ object Exits {
         val list = headers[AppConfig.ETHA_EXITS_HEADER]?.trim().orEmpty()
         MmkvManager.encodeSettings(AppConfig.PREF_ETHA_EXITS, if (parse(list).isNotEmpty()) list else "")
         val mine = headers[AppConfig.ETHA_EXIT_HEADER]?.trim().orEmpty()
+        // 3.0.1: the box moved this phone to another country — by its own choice, from the panel, or back to Auto when a country was turned
+        // off. What is open stays where it was opened (a page reloaded on its kept connection showed the old country's address for as long
+        // as that connection lived): the running core restarts, on every path that restarts it for other lines (Home, Auto, the updater).
+        if (moved(current(), mine)) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINES_CHANGED, true)
         MmkvManager.encodeSettings(AppConfig.PREF_ETHA_EXIT, mine)
         val w = want()
         if (w != null && settled(w, mine, carried)) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_EXIT_WANT, "")
         MmkvManager.encodeSettings(AppConfig.PREF_ETHA_APP_MIN, headers[AppConfig.ETHA_APP_MIN_HEADER]?.trim().orEmpty())
     }
+
+    /** Pure: the box's word of this phone's country changed between two answers ("" = Auto): open connections are on the old country. */
+    fun moved(before: String?, mine: String?): Boolean = before.orEmpty().trim() != mine.orEmpty().trim()
 
     /** Pure: a pending choice is settled by the box's confirmation (`auto` by an absent word), or by the answer to the fetch that carried it. */
     fun settled(want: String, mine: String, carried: String?): Boolean = (if (want == "auto") mine.isEmpty() else mine == want) || carried == want

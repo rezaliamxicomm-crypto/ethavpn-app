@@ -49,6 +49,13 @@ class ExitsTest {
     }
 
     @Test
+    fun anotherCountryRestartsTheCoreAndTheSameOneDoesNot() {
+        assertEquals(true, Exits.moved("ca", "us")); assertEquals(true, Exits.moved("", "ca")); assertEquals(true, Exits.moved("us", ""))   // a country, another, back to Auto
+        assertEquals(false, Exits.moved("us", "us")); assertEquals(false, Exits.moved("", "")); assertEquals(false, Exits.moved(null, ""))   // the same word: nothing to restart for
+        assertEquals(false, Exits.moved(" us", "us ")); assertEquals(true, Exits.moved(null, "ca"))
+    }
+
+    @Test
     fun theVersionComparison() {
         assertEquals(true, Exits.isBelow("2.1.3", "3.0.0")); assertEquals(false, Exits.isBelow("3.0.0", "3.0.0")); assertEquals(false, Exits.isBelow("3.0.1", "3.0.0"))
         assertEquals(true, Exits.isBelow("3.0", "3.0.1")); assertEquals(true, Exits.isBelow("v2.9.9-beta", "3.0.0"))

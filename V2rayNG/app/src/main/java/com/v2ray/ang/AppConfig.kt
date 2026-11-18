@@ -229,7 +229,7 @@ object AppConfig {
     const val PREF_ETHA_LINE_REPORT = "pref_etha_line_report"   // Auto's latest report (EthaReport), sent on the next fetch and cleared
     const val PREF_ETHA_FETCH_WAY = "pref_etha_fetch_way:"      // + a network signature: which fetch way answered there last (EthaLinkFetch)
     const val PREF_ETHA_LINES_FP = "pref_etha_lines_fp"         // the fingerprint of the line set the last fetch stored (EthaReport.fingerprint)
-    const val PREF_ETHA_LINES_CHANGED = "pref_etha_lines_changed"   // true after a fetch changed the line set: the running core must be restarted
+    const val PREF_ETHA_LINES_CHANGED = "pref_etha_lines_changed"   // true after a fetch changed the line set or the phone's country (3.0.1): the running core must be restarted
     const val PREF_ETHA_EXITS = "pref_etha_exits"               // the last X-Etha-Exits (Exits)
     const val PREF_ETHA_EXIT = "pref_etha_exit"                 // the box's word of this phone's choice
     const val PREF_ETHA_EXIT_WANT = "pref_etha_exit_want"       // a choice the box has not confirmed yet ("auto" for none)
