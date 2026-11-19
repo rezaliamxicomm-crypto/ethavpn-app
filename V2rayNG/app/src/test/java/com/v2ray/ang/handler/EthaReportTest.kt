@@ -85,4 +85,14 @@ class EthaReportTest {
         ), colds = mapOf("EthaVPN-REALITY-relay-FRA4-443" to 540L, "EthaVPN-XHTTP-www-CleanIP1-443" to 900L, "EthaVPN-WS-www-CleanIP1-443" to -1L))
         assertEquals("v=1;t=1800000000;trig=manual;use=REALITY-relay-FRA4-443;sw=0;l=REALITY-relay-FRA4-443:200,WS-www-CleanIP1-443:-1;c=REALITY-relay-FRA4-443:540", h)
     }
+
+    /** 3.0.2: the fetch adds whether the VPN is up when it carries the report; nothing is added to no report. */
+    @Test
+    fun theFetchSaysWhetherTheVpnIsOn() {
+        val report = "v=1;t=1800000000;trig=search;use=REALITY-relay-FRA4-443;sw=0;l=REALITY-relay-FRA4-443:-1"
+        assertEquals("$report;on=1", EthaReport.withVpn(report, true))
+        assertEquals("$report;on=0", EthaReport.withVpn(report, false))
+        assertEquals("", EthaReport.withVpn("", true))
+        assertEquals("", EthaReport.withVpn("", false))
+    }
 }

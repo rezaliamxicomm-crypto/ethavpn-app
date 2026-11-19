@@ -65,6 +65,11 @@ object EthaReport {
         return "v=1;t=${nowMs / 1000};trig=$trigger;use=$use;sw=${if (switched) 1 else 0}$rate;l=${items.joinToString(",")}$c$p"
     }
 
+    /** The report as the fetch sends it (3.0.2): with whether the VPN is up at that moment — `;on=1` or `;on=0`. A report is
+     *  the tunnel's last word and rides on the next fetch, which may come after the VPN was switched off: without this the box
+     *  cannot tell a phone that is cut from one that was put away. The box ignores a key it does not know. Empty stays empty. */
+    fun withVpn(report: String, vpnUp: Boolean): String = if (report.isEmpty()) "" else "$report;on=${if (vpnUp) 1 else 0}"
+
     /** What identifies a line to the running core: its address, port, name and user id — not Cloudflare's ECH
      *  configuration of the hour, which rides in the share link and would make every refresh look like new lines. */
     data class LineKey(val server: String?, val port: String?, val remarks: String?, val userId: String?)

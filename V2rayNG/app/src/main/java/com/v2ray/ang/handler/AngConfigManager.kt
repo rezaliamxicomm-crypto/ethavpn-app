@@ -600,7 +600,7 @@ object AngConfigManager {
             // (X-Etha-Carrier) — on every way of the fetch, report or not.
             val carried = if (ours) Exits.want() else null   // the pending choice this fetch carries (3.0.0): settled by its answer, confirmed or not
             val extraHeaders: Map<String, String> = if (!ours) emptyMap() else buildMap {
-                if (report.isNotEmpty()) put(AppConfig.ETHA_LINES_HEADER, report)
+                if (report.isNotEmpty()) put(AppConfig.ETHA_LINES_HEADER, EthaReport.withVpn(report, EthaNetwork.vpnUp(AngApplication.application)))   // 3.0.2: with whether the VPN is on
                 EthaDevice.hash(AngApplication.application)?.let { put(AppConfig.ETHA_DEVICE_HEADER, it) }
                 EthaNetwork.carrier(signature)?.let { put(AppConfig.ETHA_CARRIER_HEADER, it) }
                 carried?.let { put(AppConfig.ETHA_EXIT_SET_HEADER, it) }          // the Servers box (3.0.0): this phone's choice, until a fetch that carried it is answered

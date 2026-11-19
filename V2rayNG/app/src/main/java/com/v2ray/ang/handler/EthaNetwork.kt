@@ -26,6 +26,15 @@ object EthaNetwork {
         "other"
     }
 
+    /** Whether a VPN is the phone's active network now (3.0.2, for the report's `on`): ours when one is — Android runs one VPN
+     *  at a time. Read from the system, so it holds in the app's process and in the service's alike. */
+    fun vpnUp(context: Context): Boolean = try {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        cm.getNetworkCapabilities(cm.activeNetwork)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+    } catch (_: Exception) {
+        false
+    }
+
     /** Pure: the SIM's MCC-MNC from a signature on mobile data ("cell:43235" → "43235"), for the fetch's X-Etha-Carrier (2.1.2);
      *  null on Wi-Fi, anything else, or no proper digits — the box uses it only when the fetch's address says nothing. */
     fun carrier(signature: String): String? {
