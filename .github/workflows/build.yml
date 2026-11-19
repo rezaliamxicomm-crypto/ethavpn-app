@@ -173,6 +173,11 @@ jobs:
             grep -E "^e: |^w: .*deprecat|error:|FAILED|AssertionError|Exception|expected:<|What went wrong|BUILD (SUCCESSFUL|FAILED)|tests? completed" "$RUNNER_TEMP/unit-test.log" \
               | sed "s#file://$GITHUB_WORKSPACE/##g; s#$GITHUB_WORKSPACE/##g" | head -80
             echo '```'
+            # Gradle's own reason stands on the lines AFTER "What went wrong" (a dependency that did not download, a task that is
+            # no compile error): without them a failure that is neither a compile error nor a failed test says nothing here.
+            echo; echo "### What went wrong (Gradle's own lines)"; echo '```'
+            awk '/What went wrong:/{c=14} c&&c--' "$RUNNER_TEMP/unit-test.log" | sed "s#file://$GITHUB_WORKSPACE/##g; s#$GITHUB_WORKSPACE/##g" | cut -c1-300 | head -28
+            echo '```'
           fi
         } > "$RUNNER_TEMP/comment.md"
         gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@"$RUNNER_TEMP/comment.md" > /dev/null && echo "commit comment posted"
