@@ -40,6 +40,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.view.LayoutInflater
 import com.v2ray.ang.handler.Exits
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.v2ray.ang.handler.AutoSelect
 import com.v2ray.ang.handler.EthaReport
@@ -720,6 +721,13 @@ class HomeActivity : HelperBaseActivity() {
         val dialog = BottomSheetDialog(this)
         val view = LayoutInflater.from(this).inflate(R.layout.sheet_servers, null)
         dialog.setContentView(view)
+        // 3.0.3: the rows scroll in what the screen leaves beside the title and the button, and the sheet opens at its full height — a list
+        // taller than the screen had its last countries and the button below the edge, and no choice could be made (eleven countries)
+        view.findViewById<android.view.View>(R.id.exit_scroll).let { sc ->
+            sc.layoutParams = sc.layoutParams.apply { height = (Exits.listHeightDp(offered.size + 1, resources.configuration.screenHeightDp) * resources.displayMetrics.density).toInt() }
+        }
+        dialog.behavior.skipCollapsed = true
+        dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
         val rows = view.findViewById<LinearLayout>(R.id.exit_rows)
         val go = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_exit_go)
         go.text = getString(if (running) R.string.etha_server_switch else R.string.etha_server_connect)

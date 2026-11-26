@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 3.0.0: the Servers sheet — Auto and every country the box offers, each with its measured latency; one button (HomeActivity.openServers) -->
+<!-- 3.0.0: the Servers sheet — Auto and every country the box offers, each with its measured latency; one button (HomeActivity.openServers).
+     3.0.3: the rows scroll and the button stays under them — with eleven countries the plain column was taller than most screens and the
+     button was never on them; the scroll's height is set in openServers (Exits.listHeightDp). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -22,12 +24,20 @@
         android:layout_marginTop="12dp"
         android:text="@string/etha_server_pick" />
 
-    <LinearLayout
-        android:id="@+id/exit_rows"
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/exit_scroll"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        android:orientation="vertical" />
+        android:overScrollMode="never"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/exit_rows"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </androidx.core.widget.NestedScrollView>
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_exit_go"

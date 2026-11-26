@@ -1,3 +1,5 @@
+3.0.3 (Android): the list of countries in the Servers box now scrolls and its button stays on the screen — with many countries on offer the list was taller than most phones' screens, the last countries and the button were below the edge, and a country could not be chosen.
+
 3.0.2: on iPhone a change of country now takes effect at once — everything that is open is dropped and dialled again through the country you chose, within a second or two (in 3.0.1 a page that was already open could go on showing the old country's address for a while). In both apps the report sent with a refresh now also says whether the VPN was on, so the service can tell a phone that lost its line from one that was simply switched off.
 
 3.0.1: a change of country takes effect at once — when the Servers box moves you to another country, the app restarts its connections (it takes about a second), so everything, pages and apps that were already open included, leaves from the new country; before, a connection that was already open stayed on the old country until it closed, and a page reloaded right after a switch still showed the old address.
