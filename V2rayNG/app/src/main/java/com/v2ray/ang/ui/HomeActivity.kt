@@ -721,11 +721,9 @@ class HomeActivity : HelperBaseActivity() {
         val dialog = BottomSheetDialog(this)
         val view = LayoutInflater.from(this).inflate(R.layout.sheet_servers, null)
         dialog.setContentView(view)
-        // 3.0.3: the rows scroll in what the screen leaves beside the title and the button, and the sheet opens at its full height — a list
-        // taller than the screen had its last countries and the button below the edge, and no choice could be made (eleven countries)
-        view.findViewById<android.view.View>(R.id.exit_scroll).let { sc ->
-            sc.layoutParams = sc.layoutParams.apply { height = (Exits.listHeightDp(offered.size + 1, resources.configuration.screenHeightDp) * resources.displayMetrics.density).toInt() }
-        }
+        // The sheet opens at its full height (no half-open state, which leaves the button below the edge); the rows scroll in what
+        // the sheet has left beside the title and the button — the layout's own doing (sheet_servers.xml: the list's weight), with
+        // no height worked out here: 3.0.3's, from Configuration.screenHeightDp, was wrong on Android 15 and later
         dialog.behavior.skipCollapsed = true
         dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
         val rows = view.findViewById<LinearLayout>(R.id.exit_rows)

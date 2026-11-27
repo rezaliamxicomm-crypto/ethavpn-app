@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 3.0.0: the Servers sheet — Auto and every country the box offers, each with its measured latency; one button (HomeActivity.openServers).
-     3.0.3: the rows scroll and the button stays under them — with eleven countries the plain column was taller than most screens and the
-     button was never on them; the scroll's height is set in openServers (Exits.listHeightDp). -->
+     The rows scroll and the button stays under them: with eleven countries the plain column was taller than most screens and the
+     button was never on them (3.0.2). 3.0.4: the list's height is the layout's own business, never a number worked out from the
+     screen — the scroll view carries a weight, so when the column is taller than what Material's sheet gives it (the window less
+     the status and the navigation bar, whatever they are on this Android), LinearLayout takes the excess off the list and nothing
+     else, and a shorter list keeps its own height. 3.0.3 set the height from Configuration.screenHeightDp, which includes both
+     bars on Android 15 and later for an app that targets it: the button was cut off again there. Seen on emulators by
+     ServersSheetTest (the workflow's ui-test job) before a release carries it. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -29,8 +34,11 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
+        android:layout_weight="1"
+        android:fadingEdgeLength="24dp"
         android:overScrollMode="never"
-        android:scrollbars="none">
+        android:requiresFadingEdge="vertical"
+        android:scrollbars="vertical">
 
         <LinearLayout
             android:id="@+id/exit_rows"

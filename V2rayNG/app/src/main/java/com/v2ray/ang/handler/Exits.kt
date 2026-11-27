@@ -94,13 +94,6 @@ object Exits {
     /** Pure: a pending choice is settled by the box's confirmation (`auto` by an absent word), or by the answer to the fetch that carried it. */
     fun settled(want: String, mine: String, carried: String?): Boolean = (if (want == "auto") mine.isEmpty() else mine == want) || carried == want
 
-    /** Pure (3.0.3): the height of the sheet's list of `rows` rows (66 dp each: 56 and the gap) on a screen `screenDp` high — every row when
-     *  they fit beside the sheet's own parts (the handle, the title, the button, the paddings: 170 dp), else what the screen leaves, and
-     *  never under two rows; the rest scrolls and the button stays on the screen. */
-    fun listHeightDp(rows: Int, screenDp: Int): Int = minOf(maxOf(rows, 0) * SHEET_ROW_DP, maxOf(screenDp - SHEET_CHROME_DP, 2 * SHEET_ROW_DP))
-    private const val SHEET_ROW_DP = 66
-    private const val SHEET_CHROME_DP = 170
-
     /** Pure: `version` below `min` — numeric, dot-separated, a missing part 0, a suffix ignored. */
     fun isBelow(version: String, min: String): Boolean {
         fun parts(s: String) = s.trim().removePrefix("v").split(".").map { it.takeWhile { c -> c.isDigit() }.toIntOrNull() ?: 0 }

@@ -15,15 +15,6 @@ class ExitsTest {
     }
 
     @Test
-    fun theSheetsListFitsTheScreenAndLeavesTheButton() {
-        assertEquals(3 * 66, Exits.listHeightDp(3, 780))            // Auto and two countries: every row, nothing to scroll
-        assertEquals(780 - 170, Exits.listHeightDp(12, 780))        // Auto and eleven on a 6.4-inch phone: what the screen leaves, the rest scrolls
-        assertEquals(7 * 66, Exits.listHeightDp(7, 780))            // Auto and six: all of them
-        assertEquals(2 * 66, Exits.listHeightDp(12, 200))           // a split screen: never under two rows
-        assertEquals(0, Exits.listHeightDp(0, 780))
-    }
-
-    @Test
     fun flags() {
         assertEquals("🇺🇸", Exits.flag("US"))
         assertEquals("🇩🇪", Exits.flag("de"))
