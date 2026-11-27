@@ -283,6 +283,136 @@ jobs:
           ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/signing-cert-sha256.txt
           ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/direct/release/SkyRay_*_mapping.txt
 
+  # The Servers sheet seen on a real Android before a release carries it (work branches only; no release waits for it).
+  # Nothing but a phone shows a layout: 3.0.2's sheet was taller than the screen with eleven countries, 3.0.3's was again on
+  # Android 15 and later, and neither was seen before it shipped. Two emulators: Android 16 with the screen of the phone the
+  # fault was found on (1080x2340 at 450 dpi, three buttons), and Android 10 with a small screen (360x640 dp). The test
+  # (V2rayNG/app/src/androidTest) opens the real sheet with 2, 11 and 20 countries and holds it to what a customer needs; what
+  # it measured goes into a comment on the commit, its screenshots onto a branch ci-shots/<commit>-api<level>, both readable
+  # without a login. The debug build takes the two native libraries from the build job's caches (it compiles neither).
+  ui-test:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/claude/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: 36
+            profile: pixel_6
+            size: 1080x2340
+            density: 450
+          - api: 29
+            profile: Nexus 5
+            size: 1080x1920
+            density: 480
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+      with:
+        submodules: 'recursive'
+        fetch-depth: '0'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v4
+      with:
+        log-accepted-android-sdk-licenses: false
+        cmdline-tools-version: '14742923'
+        packages: 'platforms;android-37.0 build-tools;37.0.0 platform-tools'
+
+    - name: The NDK's path as the build job names it (the caches' keys carry it; nothing native is compiled here)
+      run: echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
+
+    - name: Restore cached libhevtun
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ github.workspace }}/libs
+        key: libhevtun-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/hev-socks5-tunnel/HEAD') }}-${{ hashFiles('compile-hevtun.sh') }}
+        fail-on-cache-miss: true
+
+    - name: Copy libhevtun
+      run: |
+        cp -r ${{ github.workspace }}/libs ${{ github.workspace }}/V2rayNG/app
+
+    - name: Restore cached libv2ray
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ github.workspace }}/V2rayNG/app/libs/libv2ray.aar
+        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('echfetch/echfetch.go', 'echfetch/signature.go') }}-${{ hashFiles('autoctl/libv2ray_auto.go') }}
+        fail-on-cache-miss: true
+
+    - name: Setup Java
+      uses: actions/setup-java@v5
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+
+    - name: Build the debug app and its on-device test (the emulator's ABI only)
+      run: |
+        cd ${{ github.workspace }}/V2rayNG
+        echo "sdk.dir=${ANDROID_HOME}" > local.properties
+        chmod 755 gradlew
+        set -o pipefail
+        ./gradlew :app:assembleDirectDebug :app:assembleDirectDebugAndroidTest -PABI_FILTERS=x86_64 2>&1 | tee "$RUNNER_TEMP/ui-build.log"
+
+    - name: Enable KVM (the emulator's hardware acceleration)
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: The Servers sheet on the emulator
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: ${{ matrix.api }}
+        target: google_apis
+        arch: x86_64
+        profile: ${{ matrix.profile }}
+        disable-animations: true
+        emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+        script: bash ci/sheet-test.sh ${{ matrix.size }} ${{ matrix.density }}
+
+    - name: Report what the emulator showed where it can be read without logging in
+      if: always()
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set +e
+        OUT="$RUNNER_TEMP/sheet-test"
+        {
+          echo "## The Servers sheet on an emulator, Android API ${{ matrix.api }} (${{ matrix.size }} at ${{ matrix.density }} dpi): ${{ job.status }}"
+          echo
+          echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -f "$RUNNER_TEMP/ui-build.log" ] && ! grep -q "BUILD SUCCESSFUL" "$RUNNER_TEMP/ui-build.log"; then
+            echo; echo "### The build of the debug app and its test"; echo '```'
+            grep -E "^e: |error:|FAILED|What went wrong|BUILD (SUCCESSFUL|FAILED)" "$RUNNER_TEMP/ui-build.log" \
+              | sed "s#file://$GITHUB_WORKSPACE/##g; s#$GITHUB_WORKSPACE/##g" | cut -c1-400 | head -60
+            awk '/What went wrong:/{c=14} c&&c--' "$RUNNER_TEMP/ui-build.log" | sed "s#file://$GITHUB_WORKSPACE/##g; s#$GITHUB_WORKSPACE/##g" | cut -c1-300 | head -28
+            echo '```'
+          fi
+          for f in "$OUT"/*.txt; do
+            [ -f "$f" ] || continue
+            echo; echo "### $(basename "$f")"; echo '```'; head -c 7000 "$f"; echo; echo '```'
+          done
+        } > "$RUNNER_TEMP/ui-comment.md"
+        gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@"$RUNNER_TEMP/ui-comment.md" > /dev/null && echo "commit comment posted"
+
+    - name: Keep the screenshots where they can be fetched without logging in (a branch of their own)
+      if: always()
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set +e
+        OUT="$RUNNER_TEMP/sheet-test"
+        ls "$OUT"/*.png > /dev/null 2>&1 || { echo "no screenshot to keep"; exit 0; }
+        D="$RUNNER_TEMP/shots"; rm -rf "$D"; mkdir -p "$D"; cd "$D"; git init -q .
+        git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        cp "$OUT"/*.png "$OUT"/*.txt . 2>/dev/null
+        git add -A; git commit -q -m "The Servers sheet on an emulator: API ${{ matrix.api }}, commit $GITHUB_SHA"
+        git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/ci-shots/${GITHUB_SHA:0:8}-api${{ matrix.api }}" \
+          && echo "pushed ci-shots/${GITHUB_SHA:0:8}-api${{ matrix.api }}"
+
   sign-and-release:
     needs: build
     runs-on: ubuntu-26.04
