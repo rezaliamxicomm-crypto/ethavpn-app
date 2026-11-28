@@ -335,7 +335,34 @@ jobs:
       run: |
         cp -r ${{ github.workspace }}/libs ${{ github.workspace }}/V2rayNG/app
 
+    # The library is built by this run's build job, which saves it to the cache as soon as it is built. A push that changes the
+    # Go inputs (echfetch/, autoctl/) finds no such cache yet when this job starts beside the build job: it waits for it —
+    # twice a few minutes — instead of failing (2026-11-28: a push of echfetch.go went red here while its build was green).
     - name: Restore cached libv2ray
+      id: lib-a
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ github.workspace }}/V2rayNG/app/libs/libv2ray.aar
+        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('echfetch/echfetch.go', 'echfetch/signature.go') }}-${{ hashFiles('autoctl/libv2ray_auto.go') }}
+
+    - name: The Go inputs changed with this push — wait for the build job's library
+      if: steps.lib-a.outputs.cache-hit != 'true'
+      run: sleep 330
+
+    - name: Restore cached libv2ray (second look)
+      id: lib-b
+      if: steps.lib-a.outputs.cache-hit != 'true'
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ github.workspace }}/V2rayNG/app/libs/libv2ray.aar
+        key: libv2ray-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/AndroidLibXrayLite/HEAD') }}-${{ hashFiles('echfetch/echfetch.go', 'echfetch/signature.go') }}-${{ hashFiles('autoctl/libv2ray_auto.go') }}
+
+    - name: Wait once more for the build job's library
+      if: steps.lib-a.outputs.cache-hit != 'true' && steps.lib-b.outputs.cache-hit != 'true'
+      run: sleep 300
+
+    - name: Restore cached libv2ray (third look)
+      if: steps.lib-a.outputs.cache-hit != 'true' && steps.lib-b.outputs.cache-hit != 'true'
       uses: actions/cache/restore@v6
       with:
         path: ${{ github.workspace }}/V2rayNG/app/libs/libv2ray.aar
