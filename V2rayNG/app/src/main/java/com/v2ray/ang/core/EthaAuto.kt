@@ -553,6 +553,7 @@ class EthaAuto(
             decision.moved(mono())
             report("failover", true)
             saveHealth()
+            if (searching) updateSearchingLocked()               // a failover started inside a search took a line that answers: the search is over
             failoverFetch()
             return true
         }
