@@ -148,6 +148,16 @@ jobs:
         echo "sdk.dir=${ANDROID_HOME}" > local.properties
         chmod 755 gradlew
         set -o pipefail
+        # The job's first Gradle call downloads the plugins. Twice on 2026-11-28 a repository gave no answer for the Kotlin plugin
+        # and the job failed in 22 s on a commit that had built green minutes before: that download — nothing else — is tried
+        # three times. Any other failure of it is a failure, with its lines where the report below reads them.
+        for try in 1 2 3; do
+          if ./gradlew help > "$RUNNER_TEMP/gradle-resolve.log" 2>&1; then break; fi
+          if [ "$try" = 3 ] || ! grep -Eqi "could not resolve|was not found in any of the following sources|could not get|timed out|timeout|connection (reset|refused)|unable to tunnel|handshake" "$RUNNER_TEMP/gradle-resolve.log"; then
+            cp "$RUNNER_TEMP/gradle-resolve.log" "$RUNNER_TEMP/unit-test.log"; tail -40 "$RUNNER_TEMP/gradle-resolve.log"; exit 1
+          fi
+          echo "a repository gave no answer for a plugin or a library (try $try of 3): once more in 30 s"; sleep 30
+        done
         ./gradlew :app:testDirectDebugUnitTest --tests 'com.v2ray.ang.handler.*' --tests 'com.v2ray.ang.ui.*' 2>&1 | tee "$RUNNER_TEMP/unit-test.log"   # the fork's tests; upstream's UtilsTest needs Android stubs
 
     # The server that writes this code cannot compile it or read a job's log (that needs a GitHub login): when the Go
@@ -381,6 +391,14 @@ jobs:
         echo "sdk.dir=${ANDROID_HOME}" > local.properties
         chmod 755 gradlew
         set -o pipefail
+        # the plugins' download, tried three times (as in the build job: a repository that gives no answer is not a failed build)
+        for try in 1 2 3; do
+          if ./gradlew help > "$RUNNER_TEMP/gradle-resolve.log" 2>&1; then break; fi
+          if [ "$try" = 3 ] || ! grep -Eqi "could not resolve|was not found in any of the following sources|could not get|timed out|timeout|connection (reset|refused)|unable to tunnel|handshake" "$RUNNER_TEMP/gradle-resolve.log"; then
+            cp "$RUNNER_TEMP/gradle-resolve.log" "$RUNNER_TEMP/ui-build.log"; tail -40 "$RUNNER_TEMP/gradle-resolve.log"; exit 1
+          fi
+          echo "a repository gave no answer for a plugin or a library (try $try of 3): once more in 30 s"; sleep 30
+        done
         ./gradlew :app:assembleDirectDebug :app:assembleDirectDebugAndroidTest -PABI_FILTERS=x86_64 2>&1 | tee "$RUNNER_TEMP/ui-build.log"
 
     - name: Enable KVM (the emulator's hardware acceleration)
