@@ -1,0 +1,9 @@
+
+com.v2ray.ang.ServersSheetTest:...
+com.v2ray.ang.HomeScreenTest:...
+
+Time: ۵۸٫۲۴۶
+
+OK (6 tests)
+
+
