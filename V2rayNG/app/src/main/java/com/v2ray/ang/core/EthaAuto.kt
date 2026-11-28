@@ -726,9 +726,18 @@ class EthaAuto(
             schedule.fallback = AutoSchedule.nextFallback(current = true, targetAnswered = back, fallbackAnswered = false)
             if (back) LogUtil.i(AppConfig.TAG, "Auto: the probe target answers again; measuring against it")
         }
-        if (other && which.any { answers(out, it.guid) }) {
-            schedule.fallback = true
-            LogUtil.w(AppConfig.TAG, "Auto: no line answered the probe target and the fallback answers: measuring against the fallback until the target answers again")
+        if (other) {
+            // a line answered the fallback: is it the box's target that is down, or has the phone's network simply come back? The line
+            // that answered is asked on the target once, and only when the target stays silent through a line that carries do the
+            // probes move to the fallback (without that question a returning network would have read as "the target is down")
+            val heard = which.firstOrNull { answers(out, it.guid) }
+            if (heard != null) {
+                val check = measureOnce(listOf(heard), 1, AppConfig.ETHA_PROBE_URL, minOf(policy.probeTimeoutMs, SWEEP_TIMEOUT_MS), recordCold = false)
+                if ((check[heard.guid] ?: -1L) <= 0) {
+                    schedule.fallback = true
+                    LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(heard.guid)} answers the fallback and not the probe target: measuring against the fallback until the target answers again")
+                }
+            }
         }
         if (out.isNotEmpty()) record(out, which, condemn = false)   // while searching no failure is held against a line
         schedule.searchStep(mono(), which.size, policy, slow = hint?.outage ?: false)
