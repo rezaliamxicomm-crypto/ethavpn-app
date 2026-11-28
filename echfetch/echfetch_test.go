@@ -122,6 +122,25 @@ func testServer(t *testing.T, key tls.EncryptedClientHelloKey) (port string, acc
 			_, _ = w.Write([]byte(strings.Repeat("x", 300<<10)))
 			return
 		}
+		if r.URL.Path == "/sub/lt" && r.Host == testHost { // 100 KB of "<": json.Marshal would write six bytes for each
+			_, _ = w.Write([]byte(strings.Repeat("<", 100<<10)))
+			return
+		}
+		if r.URL.Path == "/sub/ctl" && r.Host == testHost { // a body that is not text: control bytes
+			_, _ = w.Write([]byte(strings.Repeat("\x01", 10<<10)))
+			return
+		}
+		if r.URL.Path == "/sub/bin" && r.Host == testHost { // …and bytes that are no UTF-8
+			_, _ = w.Write([]byte(strings.Repeat("\xff\xfe", 5<<10)))
+			return
+		}
+		if r.URL.Path == "/sub/head100" && r.Host == testHost { // 100 KB of headers over a small body: more than a head may take, whatever the body's limit
+			for i := 0; i < 100; i++ {
+				w.Header().Add("X-Fill", strings.Repeat("h", 1000))
+			}
+			_, _ = w.Write([]byte(testBody))
+			return
+		}
 		if r.URL.Path == "/sub/bighead" && r.Host == testHost { // a small body under 400 KB of headers
 			for i := 0; i < 400; i++ {
 				w.Header().Add("X-Fill", strings.Repeat("h", 1000))
@@ -768,6 +787,26 @@ func TestTheAnswerIsBoundedBeforeAnythingIsBelievedOfIt(t *testing.T) {
 	if res := ech("/sub/big", 8<<20); res.Error != "" || len(res.Body) != 300<<10 {
 		t.Fatalf("a limit above the default is the default: error %q body %d", res.Error, len(res.Body))
 	}
+	// the head has its own bound, whatever the body's limit: 100 KB of headers is no answer even where 4 MiB of body would be taken
+	if res := ech("/sub/head100", 0); res.Error == "" || res.Status != 0 {
+		t.Fatalf("100 KB of headers must be no answer whatever the body's limit: error %q status %d", res.Error, res.Status)
+	}
+	// what reaches the app is never many times what was read: "<" stays one byte, and a body that is not text is no answer
+	b, _ := json.Marshal(echFetchRequest{URL: "https://" + testHost + ":" + port + "/sub/lt", Addresses: []string{"127.0.0.1"},
+		PinnedKey: base64.StdEncoding.EncodeToString(list), TimeoutMs: 5000, MaxBody: 512 << 10})
+	raw := FetchSubscriptionEch(string(b))
+	var lt echFetchResult
+	if err := json.Unmarshal([]byte(raw), &lt); err != nil || lt.Error != "" || len(lt.Body) != 100<<10 {
+		t.Fatalf("100 KB of '<': error %v / %q, body %d", err, lt.Error, len(lt.Body))
+	}
+	if len(raw) > 110<<10 {
+		t.Fatalf("100 KB of '<' reached the app as %d bytes of JSON: it must not grow", len(raw))
+	}
+	for _, path := range []string{"/sub/ctl", "/sub/bin"} {
+		if res := ech(path, 512<<10); res.Error == "" || res.Status != 0 || res.Body != "" {
+			t.Fatalf("%s: a body that is not text must be no answer: error %q status %d body %d", path, res.Error, res.Status, len(res.Body))
+		}
+	}
 	plainPort, _, _ := testServer(t, tls.EncryptedClientHelloKey{})
 	plain := func(path string, maxBody int64) echFetchResult {
 		return fetchJSON(t, echFetchRequest{
@@ -783,5 +822,18 @@ func TestTheAnswerIsBoundedBeforeAnythingIsBelievedOfIt(t *testing.T) {
 	}
 	if res := plain("/sub/big", 100<<10); res.Error == "" || res.Status != 0 {
 		t.Fatalf("the plain way, 300 KB over a limit of 100 KB must be no answer: error %q status %d", res.Error, res.Status)
+	}
+}
+
+func TestEchIsText(t *testing.T) {
+	for _, s := range []string{"", "dmxlc3M6Ly9hYmM=", "{\"detail\":\"expired\"}", "<html>\r\n\tسلام</html>\n"} {
+		if !echIsText([]byte(s)) {
+			t.Fatalf("%q is text", s)
+		}
+	}
+	for _, s := range []string{"a\x00b", "a\x01b", "a\x1bb", "a\x7fb", "\xff\xfe", "ok\xc3"} {
+		if echIsText([]byte(s)) {
+			t.Fatalf("%q is not text", s)
+		}
 	}
 }

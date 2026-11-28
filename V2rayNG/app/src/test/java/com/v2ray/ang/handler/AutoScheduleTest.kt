@@ -2,6 +2,7 @@ package com.v2ray.ang.handler
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -154,5 +155,20 @@ class AutoScheduleTest {
         assertEquals(AutoSchedule.Action.ProbeCurrent, sch.action(s(700.0), warm = false, watched = false, searching = false, current = "r1", due = all))
         sch.currentProbed(s(700.0), p)
         assertEquals(AutoSchedule.Action.Probe(listOf("r2", "x1")), sch.action(s(700.0), warm = false, watched = false, searching = false, current = "r1", due = all))
+    }
+
+    @Test
+    fun aSearchThatGoesOnAcrossARestartKeepsItsTenMinuteGate() {
+        // 3.1.0: the core restarted on lines the box sent, the search goes on in the new engine — the steps' gate ("after ten minutes only
+        // while the phone is in use") counts from the search's own beginning, not from the restart
+        val p = AutoPolicy.parse("search=15,sfetch=60")
+        val all: (String) -> Boolean = { true }
+        val s = AutoSchedule(); s.reseed(0, listOf("a", "b"), p, 0.5)
+        s.searchingBegan(700_000, firstAt = 700_000, since = 0)
+        assertNull(s.action(700_000, warm = false, watched = false, searching = true, current = "a", due = all))            // eleven minutes into the search, nobody using the phone: no step
+        assertNotNull(s.action(700_000, warm = true, watched = false, searching = true, current = "a", due = all))          // …in use: a step
+        val fresh = AutoSchedule(); fresh.reseed(0, listOf("a", "b"), p, 0.5)
+        fresh.searchingBegan(700_000)
+        assertNotNull(fresh.action(700_000, warm = false, watched = false, searching = true, current = "a", due = all))     // a new search: its first ten minutes are free
     }
 }

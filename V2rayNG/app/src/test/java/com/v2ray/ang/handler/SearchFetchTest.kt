@@ -74,6 +74,21 @@ class SearchFetchTest {
     }
 
     @Test
+    fun aSearchEndedByTheVpnBeingSwitchedOffIsNotResumed() {
+        val f = SearchFetch(); f.began(0)
+        val e = f.started(0, box); f.done(1_000, true, box, e)
+        f.started(21_000, box); f.done(22_000, true, box); f.started(42_000, box); f.done(43_000, true, box)   // three answered calls: the next is a minute on
+        assertFalse(f.due(60_000))
+        f.reset()                                                          // the user switches the VPN off…
+        f.began(61_000)                                                    // …and on again: no line answers still
+        assertEquals(e + 1, f.episode); assertEquals(0, f.answers)
+        assertTrue(f.due(61_000))                                          // a new search: its call at once, as before 3.1.0
+        assertEquals(61_000L, f.beganAt)
+        f.ended(70_000); f.began(75_000)
+        assertEquals(61_000L, f.beganAt)                                   // a resumed search keeps its beginning: the ten-minute rules count from there
+    }
+
+    @Test
     fun aCallThatWasNotMadeIsAskedAgainSoonAndCountsAsNothing() {
         val f = SearchFetch(); f.began(0); f.started(0, box)
         f.skipped(100, box)

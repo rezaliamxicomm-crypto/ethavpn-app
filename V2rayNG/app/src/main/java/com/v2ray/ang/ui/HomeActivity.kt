@@ -151,9 +151,10 @@ class HomeActivity : HelperBaseActivity() {
         //
         // 3.1.0 (the operator's word): on a short screen the page was taller than the screen — Renew and Support sat below the
         // edge, and the disc was cut when the page was scrolled to them. There the disc gives way: its box is made smaller by
-        // what the page is too tall (down to RING_MIN_DP) and the disc is drawn to fit it, so the whole page is on screen without
-        // scrolling. The box is laid out anew, this listener runs once more and finds nothing left to do; a page that gets shorter
-        // again (a line of text gone) gives the disc its size back.
+        // what the page is too tall (down to RING_MIN_DP) and what is in it follows — the halo is laid out at the box's size, the disc
+        // is drawn smaller in its place — so the whole page is on screen without scrolling. The box itself is not scaled (a scaled
+        // box takes taps only on its scaled bounds, and the disc's rim would be dead). The box is laid out anew, this listener runs
+        // once more and finds nothing left to do; a page that gets shorter again (a line of text gone) gives the disc its size back.
         binding.hero.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
             val density = resources.displayMetrics.density
             val spare = (bottom - top) - binding.hero.paddingTop - binding.hero.paddingBottom - binding.heroBlock.height
@@ -164,16 +165,19 @@ class HomeActivity : HelperBaseActivity() {
             val over = if (page != null && room > 0) maxOf(page.height - room, 0) else 0
             val box = binding.ring.layoutParams.height.takeIf { it > 0 } ?: full
             val want = (box + maxOf(spare, 0) - over).coerceIn(least, full)
-            if (want != box) {
-                binding.ring.post {
-                    val lp = binding.ring.layoutParams
-                    if (lp.height != want) { lp.width = want; lp.height = want; binding.ring.layoutParams = lp }
-                }
-            }
             val fit = want.toFloat() / full
             val grow = if (want == full) 1f + 0.12f * (spare / (160f * density)).coerceIn(0f, 1f) else 1f
-            binding.ring.scaleX = fit * grow
-            binding.ring.scaleY = fit * grow
+            val apply = Runnable {
+                val lp = binding.ring.layoutParams
+                if (lp.height != want) { lp.width = want; lp.height = want; binding.ring.layoutParams = lp }
+                val hl = binding.halo.layoutParams
+                if (hl.height != want) { hl.width = want; hl.height = want; binding.halo.layoutParams = hl }
+                binding.btnConnect.scaleX = fit
+                binding.btnConnect.scaleY = fit
+                binding.ring.scaleX = grow
+                binding.ring.scaleY = grow
+            }
+            if (want != box) binding.ring.post(apply) else apply.run()   // a new size is given after this layout pass, with the disc's scale: one change on screen
         }
         binding.tvUpdate.setOnClickListener { Updates.open(this) }
 
@@ -926,6 +930,9 @@ class HomeActivity : HelperBaseActivity() {
             try {
                 val result = UpdateCheckerManager.checkForUpdate()
                 MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LAST_UPDATE_CHECK, System.currentTimeMillis())
+                if (!result.hasUpdate && result.error == null) {
+                    MmkvManager.encodeSettings(AppConfig.PREF_ETHA_DIRECT_LATEST, "")   // the check answered and offers nothing (a version withdrawn): the button goes
+                }
                 if (result.hasUpdate) {
                     updateResult = result
                     result.latestVersion?.let { MmkvManager.encodeSettings(AppConfig.PREF_ETHA_DIRECT_LATEST, it) }   // the Update button outlives this activity

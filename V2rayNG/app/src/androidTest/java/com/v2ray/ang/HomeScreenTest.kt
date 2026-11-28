@@ -167,7 +167,11 @@ class HomeScreenTest {
                     if (sv != null && page != null && ring != null) {
                         val room = sv.height - sv.paddingTop - sv.paddingBottom
                         val over = page.height - room
-                        text.add("   the page is ${dp(page.height)} dp tall in ${dp(room)} dp of screen; the disc's box ${dp(ring.width)} x ${dp(ring.height)} dp, drawn at ${"%.2f".format(ring.scaleX)}")
+                        val disc = a.findViewById<View>(R.id.btn_connect)
+                        val discSeen = seen(disc)
+                        text.add("   the page is ${dp(page.height)} dp tall in ${dp(room)} dp of screen; the disc's box ${dp(ring.width)} x ${dp(ring.height)} dp; the disc drawn ${dp(discSeen.width())} x ${dp(discSeen.height())} dp (scale ${"%.2f".format(java.util.Locale.US, disc.scaleX)})")
+                        if (discSeen.width() > ring.width + 2 || discSeen.height() > ring.height + 2) problems.add("the disc is drawn larger than its box")
+                        if (dp(discSeen.width()) < 90) problems.add("the disc is drawn at ${dp(discSeen.width())} dp: too small to press")
                         if (over > 0 && dp(ring.height) > 133) problems.add("the page is ${dp(over)} dp taller than the screen and the disc has not given way (its box is ${dp(ring.height)} dp)")
                         if (over <= 0) {
                             for ((what, id) in listOf("Renew" to R.id.btn_renew, "Support" to R.id.btn_support)) {

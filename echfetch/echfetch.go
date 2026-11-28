@@ -33,6 +33,7 @@ package libv2ray
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -49,6 +50,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 type echFetchRequest struct {
@@ -85,7 +87,8 @@ type echFetchResult struct {
 
 const (
 	echMaxBody        = 4 << 20
-	echMaxHead        = 64 << 10 // what the status line and the headers may take on top of the body: a header block has no bound of its own in net/http's reader
+	echMaxHead        = 64 << 10 // what the status line and the headers may take: a header block has no bound of its own in net/http's reader
+	echBodySlack      = 16 << 10 // what the body's framing (chunk sizes, a trailer) may take on top of the body itself
 	echDefaultTimeout = 20 * time.Second
 	echDNSTypeHTTPS   = 65
 )
@@ -126,11 +129,30 @@ func marshalEchResult(r echFetchResult) string {
 	if r.Headers == nil {
 		r.Headers = map[string]string{}
 	}
-	b, err := json.Marshal(r)
-	if err != nil {
+	// "<", ">" and "&" as they are: json.Marshal writes each as six bytes, and a body of them would reach the app six times
+	// its size (the iPhone's tunnel reads this inside a process of about 50 MiB)
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(r); err != nil {
 		return `{"error":"result: ` + strings.ReplaceAll(err.Error(), `"`, `'`) + `"}`
 	}
-	return string(b)
+	return strings.TrimRight(buf.String(), "\n")
+}
+
+// echIsText says whether b is what an answer of ours is made of: valid UTF-8 without control characters but tab, line feed
+// and carriage return — a subscription (base64), the box's refusals (JSON), an error page. Anything else is no answer of
+// ours; and in JSON every control or invalid byte would take six bytes on its way to the app.
+func echIsText(b []byte) bool {
+	if !utf8.Valid(b) {
+		return false
+	}
+	for _, c := range b {
+		if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') || c == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // echRoute is how a fetch leaves the phone: bound to an interface, through a proxy, or neither.
@@ -317,9 +339,11 @@ func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, us
 }
 
 // echExchange is the request and its answer on an open TLS connection, the same for both ways. Everything the server may
-// send is bounded before anything is believed of it (the signature is checked after): the body by maxBody (0: echMaxBody),
-// and the whole answer — status line, headers, the body's framing — by twice that and echMaxHead, so that neither a body
-// nor a header block of any size can grow the process that reads it.
+// send is bounded before anything is believed of it (the signature is checked after): the status line and the headers by
+// echMaxHead — whatever the body's limit —, the body by maxBody (0: echMaxBody) and its framing by echBodySlack; and both
+// must be text (echIsText: a header that is not is left out, a body that is not is no answer). So neither a body nor a
+// header block of any size or kind can grow the process that reads it: what reaches the app is at most about twice the
+// body's limit and twice echMaxHead.
 func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent string, extra map[string]string, maxBody int) (echFetchResult, error) {
 	limit := echMaxBody
 	if maxBody > 0 && maxBody < echMaxBody {
@@ -344,11 +368,13 @@ func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent
 	if err := httpReq.Write(conn); err != nil {
 		return echFetchResult{}, err
 	}
-	resp, err := http.ReadResponse(bufio.NewReader(io.LimitReader(conn, 2*int64(limit)+echMaxHead)), httpReq)
+	wire := &io.LimitedReader{R: conn, N: echMaxHead} // the head first: at most echMaxHead from the wire until it is parsed
+	resp, err := http.ReadResponse(bufio.NewReader(wire), httpReq)
 	if err != nil {
 		return echFetchResult{}, err
 	}
 	defer resp.Body.Close()
+	wire.N += int64(limit) + echBodySlack // then the body: its limit and its framing, on top of what the head left
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 	if err != nil {
 		return echFetchResult{}, err
@@ -356,9 +382,12 @@ func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent
 	if len(body) > limit {
 		return echFetchResult{}, errors.New("response larger than the limit")
 	}
+	if !echIsText(body) {
+		return echFetchResult{}, errors.New("response is not text")
+	}
 	headers := make(map[string]string, len(resp.Header))
 	for name, values := range resp.Header {
-		if len(values) > 0 {
+		if len(values) > 0 && echIsText([]byte(values[len(values)-1])) {
 			headers[strings.ToLower(name)] = values[len(values)-1]
 		}
 	}

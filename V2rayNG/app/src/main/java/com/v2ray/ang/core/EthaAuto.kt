@@ -153,12 +153,11 @@ class EthaAuto(
     private val noted = HashSet<String>()                        // lines whose -1 in results is a note for the report, not a failure held against them (3.1.0); under the mutex
     private val pullFailedAt = HashMap<String, Long>()           // lines whose pull failed, and when: for PULL_FAILED_FOR_MS such a line is not taken and its HEAD answer is no answer; under the mutex
     @Volatile private var confirmDue = false                     // a search's call was answered: the lines are measured once more before the box is told more
-    @Volatile private var lastSearchFetchAt = -1_000_000L        // when a search's call last started
+    @Volatile private var restartingForLines = false             // the engine's own fetch brought other lines and the core restarts on them: the search goes on in the next engine
     @Volatile private var markedAt = -1_000_000L                 // when the search's mark was last written
     private var probesThisPass = 0
     private var searchSteps = 0
     private val fetching = AtomicBoolean(false)
-    private val pullTimes = ArrayDeque<Long>()                   // when the pulls of the last hour were made: the budget (2.1.2)
     private val pulls = ArrayList<EthaReport.Pull>()             // the pulls not yet carried to the box by a fetch
     private var reportedPulls = 0                                // how many of them (the oldest) the stored report header carries
     @Volatile private var lastPull: Triple<String, Long, Boolean>? = null   // the line last pulled, when, and whether it carried
@@ -209,7 +208,10 @@ class EthaAuto(
     /** The engine is done: nothing it still has in flight touches the core or the store after this. */
     fun stop() {
         stopped = true
-        if (searching) synchronized(searchFetches) { searchFetches.ended(mono()) }   // the engine that starts next goes on with this search's pace (SearchFetch.RESUME_MS)
+        // the engine's own fetch brought other lines: the engine that starts on them goes on with this search's pace
+        // (SearchFetch.RESUME_MS); any other stop while searching — the VPN switched off, a refetch by hand — ends the search, and
+        // the next one calls at once
+        if (searching) synchronized(searchFetches) { if (restartingForLines) searchFetches.ended(mono()) else searchFetches.reset() }
         scope.cancel()
         saveHealth(force = true)
     }
@@ -617,13 +619,15 @@ class EthaAuto(
      *  searches are the phone's own network coming back). None: now it is the lines, not the network — every line goes into
      *  the report as failed, made this second, and the box is called again at once; it answers such a report with lines in
      *  other ranges. Once a search. (The first form of 3.1.0 made that report at the search's start, from one measurement
-     *  taken while nothing said whether the phone was online: a lift would have read as "every line failed".) */
+     *  taken while nothing said whether the phone was online: a lift would have read as "every line failed".) Within the
+     *  sweep's window. */
     private fun confirmLocked() {
         val cur = byGuid[current] ?: return
         val all = everyLine(listOf(cur))
-        val out = measureOnce(all, all.size, if (schedule.fallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, policy.failoverMs.toLong())
+        // the window of the sweep, not of the failover: a signal that has just come back — the link has answered — may need more than a
+        // second and a half for a line's first request, and "every line failed" must not rest on the shortest window in the engine
+        val out = measureOnce(all, all.size, if (schedule.fallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, minOf(policy.probeTimeoutMs, SWEEP_TIMEOUT_MS))
         if (out.isEmpty()) return                                // no measurement at all: the next answered call asks again
-        synchronized(searchFetches) { searchFetches.noteConfirmed() }
         if (all.any { answers(out, it.guid) }) {
             record(out, all, condemn = false)
             val best = all.filter { answers(out, it.guid) }.minByOrNull { out[it.guid] ?: Long.MAX_VALUE }
@@ -634,6 +638,7 @@ class EthaAuto(
             updateSearchingLocked()                              // the search is over: forgiven, reported
             return
         }
+        synchronized(searchFetches) { searchFetches.noteConfirmed() }   // spent by a report that is made — not by a confirmation that found a line (which may yet carry nothing)
         record(out, all, condemn = false, note = true)           // nothing held against a line; every one of them goes into this report
         report("search", false)
         LogUtil.w(AppConfig.TAG, "Auto: the link answers and none of ${all.size} lines does: the box is told that every line failed")
@@ -693,7 +698,11 @@ class EthaAuto(
             decision.moved(mono())
             movedWhileSearching = true
         }
-        updateSearchingLocked()
+        // The search ends when a line ANSWERS — not when the memory stops saying "every line is out". No failure is held against a
+        // line while searching, nor by the measurement of every line that began the search, so that question is answered "no" at the
+        // first step: until 3.1.0 a search that began after a failover was given up some eight seconds later, on a dead line, and
+        // with it the calls to the box stopped — a phone put away fell silent (the independent audit's second look).
+        if (found != null) updateSearchingLocked()
     }
 
     // ---------------------------------------------------------------- measuring
@@ -838,7 +847,7 @@ class EthaAuto(
         val p = byGuid[target]?.let { pullLocked(it, "w") }
         if (p != null && !p.carries) {                            // the candidate answers but carries nothing (2.1.2): no move, the candidate held as failed
             LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(target)} answers but carries nothing: no move")
-            condemn(target)
+            condemn(target); pullFailedAt[target] = mono()
             if (phase == AutoDecision.Phase.FIRST) decision.firstSwitchDone = false   // the first pass's one correction is not spent on it
             return false
         }
@@ -855,8 +864,10 @@ class EthaAuto(
      *  (the blob is the box's). */
     private fun pullAllowed(now: Long): Boolean {
         if (policy.pullKb <= 0 || policy.pullCapPerHour <= 0 || schedule.fallback) return false
-        while (pullTimes.isNotEmpty() && now - pullTimes.first() > PULL_HOUR_MS) pullTimes.removeFirst()
-        return pullTimes.size < policy.pullCapPerHour
+        synchronized(pullTimes) {
+            while (pullTimes.isNotEmpty() && now - pullTimes.first() > PULL_HOUR_MS) pullTimes.removeFirst()
+            return pullTimes.size < policy.pullCapPerHour
+        }
     }
 
     /** pullKb KB of the box's blob through the line (the core library's PullVia, a Range request): true when the line carries — every
@@ -866,7 +877,7 @@ class EthaAuto(
     private fun pullLocked(line: Line, why: String): EthaReport.Pull? {
         val now = mono()
         if (stopped || !pullAllowed(now)) return null
-        pullTimes.addLast(now)
+        synchronized(pullTimes) { pullTimes.addLast(now) }
         val raw = try {
             controller.pullVia(line.tag, AppConfig.ETHA_PULL_URL, policy.pullKb.toLong(), policy.pullWinMs, maxOf(policy.stallMs, PULL_IDLE_MIN_MS))
         } catch (e: Exception) {
@@ -909,7 +920,7 @@ class EthaAuto(
                 report("auto", true)
                 saveHealth()
             }
-            !p.carries -> condemn(alt.guid)
+            !p.carries -> { condemn(alt.guid); pullFailedAt[alt.guid] = mono() }
             else -> LogUtil.i(AppConfig.TAG, "Auto: ${nameOf(alt.guid)} is slow too ($reason): staying on ${nameOf(current)} — a slow network")
         }
     }
@@ -1084,11 +1095,17 @@ class EthaAuto(
         if (dead) {
             searchSteps = 0
             movedWhileSearching = false
-            schedule.searchingBegan(now, if (swept) now + SEARCH_FIRST_STEP_MS else now)   // every line has just been measured: the first step a few seconds on
             confirmDue = false
             // a search that begins within SearchFetch.RESUME_MS of the last one's end — the core restarted on lines the box sent and
-            // they do not answer either; a line answered for a moment — is the same search: its calls keep their pace
-            val due = synchronized(searchFetches) { searchFetches.began(now); searchFetches.due(now) }
+            // they do not answer either; a line answered for a moment — is the same search: its calls keep their pace, and its
+            // ten-minute rules (the steps', the calls') count from its own beginning
+            val warmNow = now - lastTrafficAt < policy.warmMs
+            val watchedNow = now - watchedAt < WATCHED_FOR_MS
+            val (due, since) = synchronized(searchFetches) {
+                searchFetches.began(now)
+                (searchFetches.due(now) && searchFetches.allowed(now, warmNow, watchedNow, lastSearchFetchAt)) to searchFetches.beganAt
+            }
+            schedule.searchingBegan(now, if (swept) now + SEARCH_FIRST_STEP_MS else now, since)   // every line has just been measured: the first step a few seconds on
             markedAt = -1_000_000L
             markSearching(true)
             report("search", false)                              // names the line in use, as before 3.1.0: whether it is the lines or the phone's network is not known yet (confirmLocked)
@@ -1126,6 +1143,7 @@ class EthaAuto(
                     MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINES_CHANGED, false)
                     if (searching) { markedAt = -1_000_000L; markSearching(true) }   // fresh at the moment it matters: the engine that starts next reads it
                     LogUtil.i(AppConfig.TAG, "Auto: the fetch brought other lines; the core restarts on them")
+                    restartingForLines = true
                     onLinesChanged()
                 } else {
                     confirm = search && answered && ours
@@ -1199,6 +1217,8 @@ class EthaAuto(
         // search, fetch at once — for as long as the box keeps sending other lines (the iPhone audit's finding; the same here).
         private val searchFetches = SearchFetch()              // when the subscription is fetched again while searching (3.1.0); under its own lock
         @Volatile private var lastFailoverFetchAt = -1_000_000L
+        @Volatile private var lastSearchFetchAt = -1_000_000L  // when a search's call last started: "once in ten minutes" holds across restarts
+        private val pullTimes = ArrayDeque<Long>()             // when the pulls of the last hour were made: the budget (2.1.2), not begun anew by a restart; under its own lock
         private const val SEARCH_FIRST_STEP_MS = 3_000L        // a search that began with every line measured takes its first step this much later
         private const val MARK_EVERY_MS = 20_000L              // the search's mark is written again this often
         private const val PULL_IDLE_MIN_MS = 4_000L            // a pull's bytes may pause this long whatever stallSec says (the box may send 3: the alarm, not the proof)

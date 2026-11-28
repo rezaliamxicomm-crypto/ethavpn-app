@@ -143,11 +143,11 @@ class AutoSchedule {
     /** Searching begins: every line in turn, two at a time, the first step at [firstAt] — now, or a few seconds on when the
      *  engine has just measured every line (3.1.0: the sweep that found nothing is what began the search); ends:
      *  [reseed]/[start] as the engine decides. */
-    fun searchingBegan(nowMs: Long, firstAt: Long = nowMs) {
+    fun searchingBegan(nowMs: Long, firstAt: Long = nowMs, since: Long = nowMs) {
         cursor = 0; phase = Phase.STEADY
         nextProbeAt = firstAt
         currentDueAt = null
-        searchingSince = nowMs
+        searchingSince = since      // a search that goes on across a restart of the core (SearchFetch) began when it first began: the ten-minute gate counts from there
     }
 
     /** Searching: one step taken; the rotation wraps without end, each line once per searchSec (two lines a step), three

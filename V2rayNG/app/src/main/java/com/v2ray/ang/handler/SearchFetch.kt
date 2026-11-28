@@ -35,7 +35,9 @@ class SearchFetch {
     /** this search's "every line failed" has been told to the box: once a search */
     var confirmed = false
         private set
-    private var beganAt = 0L
+    /** when this search began (a resumed one: when it first began) — the ten-minute rules count from here */
+    var beganAt = 0L
+        private set
     private var endedAt = -1L          // when the search last ended, or its engine stopped; -1 while one runs (or before the first)
 
     /** Searching began: the first call is due now — unless this is the last search going on ([RESUME_MS]). */
@@ -49,6 +51,13 @@ class SearchFetch {
     /** The search ended — a line answers again — or the engine that ran it was stopped (the core restarts on other lines). */
     fun ended(nowMs: Long) {
         if (endedAt < 0) endedAt = nowMs
+    }
+
+    /** The VPN was switched off (or restarted by anything but the engine's own fetch) while searching: the search is over for
+     *  good — the next one is new, and calls at once. */
+    fun reset() {
+        endedAt = -1L
+        nextAt = 0L
     }
 
     /** A call is being made: nothing else is due until it ends ([done], which takes the episode this returns). */
