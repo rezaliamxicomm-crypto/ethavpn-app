@@ -12,6 +12,7 @@
         android:layout_height="40dp"
         android:background="@drawable/bg_menu_button"
         android:contentDescription="@string/title_settings"
+        android:duplicateParentState="true"
         android:scaleType="center"
         android:src="@drawable/ic_menu_lines_22dp" />
 </FrameLayout>

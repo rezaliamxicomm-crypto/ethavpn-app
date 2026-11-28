@@ -28,8 +28,10 @@ import java.io.FileOutputStream
  * menu button, "Refetch" and "Refetched …", and the account card's two buttons still on the screen. In English and in
  * Farsi, with a screenshot of each for the operator: a layout is seen on a phone, not in a build.
  *
- * The account is made up — three lines on documentation addresses under a link whose host does not resolve, fetched "five
- * minutes ago" so that nothing asks the network — and is taken away again after each test.
+ * The account is made up — three lines on documentation addresses under a link of our own form with a token no account has,
+ * fetched "five minutes ago" so that nothing asks the network (Home fetches by itself only what is an hour old or ended) — and
+ * is taken away again after each test. The link has our host because Home shows the first subscription that is one of ours
+ * before any other (a fresh install holds an empty default group, which a stranger's link would stand behind).
  */
 @RunWith(AndroidJUnit4::class)
 class HomeScreenTest {
@@ -47,7 +49,7 @@ class HomeScreenTest {
         MmkvManager.encodeSubscription(
             subId,
             SubscriptionItem(
-                remarks = "SkyRay", url = "https://skyray-ui-test.invalid/sub/uitest00", lastUpdated = now - 5 * 60_000L,
+                remarks = "SkyRay", url = "https://${AppConfig.ETHA_SUB_HOSTS.first()}${AppConfig.ETHA_SUB_PATH}ui-test-no-such-account", lastUpdated = now - 5 * 60_000L,
                 download = 3_200_000_000L, total = 20_000_000_000L, expire = now / 1000 + 21 * 86_400L, infoUpdated = now
             )
         )
@@ -151,8 +153,11 @@ class HomeScreenTest {
                     }
                 }
                 shot(tag)
-                // the menu button opens Settings, as the icon it replaced did
-                scenario.onActivity { a -> a.findViewById<View>(R.id.btn_menu)?.let { if (!it.hasOnClickListeners()) problems.add("the menu button takes no tap") } }
+                // the menu button opens Settings, as the icon it replaced did: the tap is taken by the action's own view, which holds the button
+                scenario.onActivity { a ->
+                    val holder = a.findViewById<View>(R.id.btn_menu)?.parent as? View
+                    if (holder == null || !holder.hasOnClickListeners()) problems.add("the menu button takes no tap")
+                }
             }
         } catch (e: Throwable) {
             problems.add("the test itself failed: $e")
