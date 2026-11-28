@@ -45,7 +45,8 @@
 
         <!-- the hero: the glowing Connect button, the state, one line under it. It takes the height the phone has
              to spare (the weight; the ScrollView fills the viewport), with its block in the middle, so the last
-             button sits at the bottom of the screen on every phone; HomeActivity grows the disc with that height. -->
+             button sits at the bottom of the screen on every phone; HomeActivity grows the disc with that height —
+             and on a screen too short for the page makes it smaller, so that the page needs no scrolling (3.1.0). -->
         <LinearLayout
             android:id="@+id/hero"
             android:layout_width="match_parent"
@@ -65,15 +66,19 @@
               android:gravity="center_horizontal"
               android:orientation="vertical">
 
+            <!-- 204 dp on a screen that has the room. On a short one HomeActivity makes this box smaller (3.1.0) and draws
+                 what is in it to fit: the halo and the disc keep their own sizes, centred, and are scaled with the box. -->
             <FrameLayout
                 android:id="@+id/ring"
                 android:layout_width="204dp"
-                android:layout_height="204dp">
+                android:layout_height="204dp"
+                android:clipChildren="false">
 
                 <View
                     android:id="@+id/halo"
                     android:layout_width="204dp"
                     android:layout_height="204dp"
+                    android:layout_gravity="center"
                     android:background="@drawable/bg_halo_blue" />
 
                 <com.google.android.material.button.MaterialButton

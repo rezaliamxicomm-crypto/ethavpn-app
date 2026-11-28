@@ -15,8 +15,13 @@ package com.v2ray.ang.handler
  *     screen) or once in IDLE_EVERY_MS: a phone with no way out at all, left in a pocket, does not dial every minute for
  *     hours ([allowed]).
  *
- * A search is an episode: a call that began in an earlier search says nothing of this one ([done] with its episode).
- * Times are monotonic milliseconds.
+ * A search is an episode, and it outlives the engine: the object is held for the whole process (Android) or by the tunnel's
+ * provider (iPhone), because a fetch that brings other lines restarts the core and with it the engine. A search that
+ * begins within RESUME_MS of the last one's end — the core restarted on the lines the box sent and they do not answer
+ * either; a line answered for a moment — is the same search: its calls keep their pace and its one confirmed report stays
+ * spent ([began], [ended]). Without that every restart began anew — fetch, restart, search, fetch at once — for as long
+ * as the box kept sending other lines (the independent audit of 3.1.0). A call that began in an earlier search says
+ * nothing of this one ([done] with its episode). Times are monotonic milliseconds.
  */
 class SearchFetch {
     var nextAt = 0L
@@ -27,11 +32,23 @@ class SearchFetch {
         private set
     var episode = 0
         private set
+    /** this search's "every line failed" has been told to the box: once a search */
+    var confirmed = false
+        private set
     private var beganAt = 0L
+    private var endedAt = -1L          // when the search last ended, or its engine stopped; -1 while one runs (or before the first)
 
-    /** Searching began: the first call is due now. */
+    /** Searching began: the first call is due now — unless this is the last search going on ([RESUME_MS]). */
     fun began(nowMs: Long) {
-        episode += 1; beganAt = nowMs; failures = 0; answers = 0; nextAt = nowMs
+        val resumed = episode > 0 && endedAt >= 0 && nowMs - endedAt in 0..RESUME_MS
+        endedAt = -1L
+        if (resumed) return
+        episode += 1; beganAt = nowMs; failures = 0; answers = 0; nextAt = nowMs; confirmed = false
+    }
+
+    /** The search ended — a line answers again — or the engine that ran it was stopped (the core restarts on other lines). */
+    fun ended(nowMs: Long) {
+        if (endedAt < 0) endedAt = nowMs
     }
 
     /** A call is being made: nothing else is due until it ends ([done], which takes the episode this returns). */
@@ -54,6 +71,17 @@ class SearchFetch {
         }
     }
 
+    /** A call was due and none was made (the iPhone's tunnel: the app is on screen and fetches by itself, or the tunnel's memory
+     *  is too near its limit): asked again in REPEAT_MS, and neither an answer nor a failure is counted. */
+    fun skipped(nowMs: Long, policy: AutoPolicy) {
+        nextAt = nowMs + minOf(REPEAT_MS, policy.searchFetchMs)
+    }
+
+    /** The engine has told the box that every line failed: not again in this search. */
+    fun noteConfirmed() {
+        confirmed = true
+    }
+
     fun due(nowMs: Long): Boolean = nowMs >= nextAt
 
     /** May a call that is due be made now? Freely for the first ten minutes of the search; after that while the phone is in use
@@ -68,6 +96,8 @@ class SearchFetch {
         const val EARLY_FOR_MS = 600_000L
         /** …after which a phone nobody is using calls this often */
         const val IDLE_EVERY_MS = 600_000L
+        /** a search that begins this soon after the last one's end is the same search */
+        const val RESUME_MS = 120_000L
         /** a mark left by a search counts for this long */
         const val MARK_FRESH_MS = 60_000L
 

@@ -78,6 +78,8 @@ class HomeActivity : HelperBaseActivity() {
     companion object {
         const val EXTRA_LINK = "etha_link"
         private const val CONNECT_GUARD_MS = 25_000L
+        private const val RING_DP = 204f                // the disc's box as designed (activity_home.xml)
+        private const val RING_MIN_DP = 132f            // …and the least it is made on a screen too short for the page (the disc itself then 97 dp)
     }
 
     private val binding by lazy { ActivityHomeBinding.inflate(layoutInflater) }
@@ -146,11 +148,32 @@ class HomeActivity : HelperBaseActivity() {
         // The hero has the height the phone leaves over (activity_home.xml): the disc with its halo grows with it, up
         // to 12 % at 160 dp to spare (168 dp, the design's tall-phone hero) — drawn larger, laid out the same, so
         // nothing else moves; the halo's clear rim is what reaches past its box.
+        //
+        // 3.1.0 (the operator's word): on a short screen the page was taller than the screen — Renew and Support sat below the
+        // edge, and the disc was cut when the page was scrolled to them. There the disc gives way: its box is made smaller by
+        // what the page is too tall (down to RING_MIN_DP) and the disc is drawn to fit it, so the whole page is on screen without
+        // scrolling. The box is laid out anew, this listener runs once more and finds nothing left to do; a page that gets shorter
+        // again (a line of text gone) gives the disc its size back.
         binding.hero.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+            val density = resources.displayMetrics.density
             val spare = (bottom - top) - binding.hero.paddingTop - binding.hero.paddingBottom - binding.heroBlock.height
-            val grow = 1f + 0.12f * (spare / (160f * resources.displayMetrics.density)).coerceIn(0f, 1f)
-            binding.ring.scaleX = grow
-            binding.ring.scaleY = grow
+            val full = Math.round(RING_DP * density)
+            val least = Math.round(RING_MIN_DP * density)
+            val page = binding.root.getChildAt(0)
+            val room = binding.root.height - binding.root.paddingTop - binding.root.paddingBottom
+            val over = if (page != null && room > 0) maxOf(page.height - room, 0) else 0
+            val box = binding.ring.layoutParams.height.takeIf { it > 0 } ?: full
+            val want = (box + maxOf(spare, 0) - over).coerceIn(least, full)
+            if (want != box) {
+                binding.ring.post {
+                    val lp = binding.ring.layoutParams
+                    if (lp.height != want) { lp.width = want; lp.height = want; binding.ring.layoutParams = lp }
+                }
+            }
+            val fit = want.toFloat() / full
+            val grow = if (want == full) 1f + 0.12f * (spare / (160f * density)).coerceIn(0f, 1f) else 1f
+            binding.ring.scaleX = fit * grow
+            binding.ring.scaleY = fit * grow
         }
         binding.tvUpdate.setOnClickListener { Updates.open(this) }
 

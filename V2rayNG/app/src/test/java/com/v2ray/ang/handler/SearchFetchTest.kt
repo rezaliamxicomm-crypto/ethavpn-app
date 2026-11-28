@@ -43,6 +43,45 @@ class SearchFetchTest {
     }
 
     @Test
+    fun aSearchThatBeginsRightAfterTheLastOneEndedIsTheSameSearch() {
+        // the audit's chain: a call brings other lines, the core restarts on them, they do not answer either, Searching begins again —
+        // and the call that used to go out "at once" every time now keeps the pace of the search it belongs to
+        val f = SearchFetch(); f.began(0)
+        val e = f.started(0, box); f.done(2_000, true, box, e)            // the first call: answered, it brought other lines
+        f.ended(2_500)                                                     // the engine is stopped for the restart
+        f.began(9_000)                                                     // the new engine: its lines do not answer, Searching again
+        assertEquals(e, f.episode); assertEquals(1, f.answers)
+        assertFalse(f.due(9_000)); assertFalse(f.due(21_999)); assertTrue(f.due(22_000))   // not at once: twenty seconds after the answered call
+        f.started(22_000, box); f.done(23_000, true, box); f.ended(23_500); f.began(30_000)
+        assertFalse(f.due(42_999)); assertTrue(f.due(43_000))
+        f.started(43_000, box); f.done(44_000, true, box); f.ended(44_500); f.began(51_000)
+        assertFalse(f.due(103_999)); assertTrue(f.due(104_000))            // from the third answered call on: every searchFetchSec, however often the core restarts
+        f.noteConfirmed(); f.ended(104_500); f.began(110_000)
+        assertTrue(f.confirmed)                                            // "every line failed" is told once a search, not once an engine
+    }
+
+    @Test
+    fun aSearchLongAfterTheLastOneIsANewSearch() {
+        val f = SearchFetch(); f.began(0)
+        val e = f.started(0, box); f.done(1_000, true, box, e); f.noteConfirmed()
+        f.ended(5_000)                                                     // a line answered: the search is over
+        f.began(5_000 + SearchFetch.RESUME_MS + 1)                         // …and two minutes later another begins
+        assertEquals(e + 1, f.episode); assertEquals(0, f.answers); assertFalse(f.confirmed)
+        assertTrue(f.due(5_000 + SearchFetch.RESUME_MS + 1))               // its first call at once
+        f.ended(200_000); f.ended(260_000)                                 // ended twice (the search, then the engine): the first time counts
+        f.began(200_000 + SearchFetch.RESUME_MS)                           // exactly at the edge: still the same search
+        assertEquals(e + 1, f.episode)
+    }
+
+    @Test
+    fun aCallThatWasNotMadeIsAskedAgainSoonAndCountsAsNothing() {
+        val f = SearchFetch(); f.began(0); f.started(0, box)
+        f.skipped(100, box)
+        assertEquals(0, f.answers); assertEquals(0, f.failures)
+        assertFalse(f.due(20_099)); assertTrue(f.due(20_100))
+    }
+
+    @Test
     fun afterTenMinutesACallWaitsForThePhoneToBeInUse() {
         val f = SearchFetch(); f.began(0)
         assertTrue(f.allowed(599_000, warm = false, watched = false, lastStartMs = 590_000))     // the first ten minutes: freely

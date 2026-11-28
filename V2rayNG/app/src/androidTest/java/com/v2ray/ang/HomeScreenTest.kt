@@ -152,9 +152,34 @@ class HomeScreenTest {
                         if (v == null || !v.isShown) problems.add("$what is not shown") else text.add("   $what ${onScreen(v).toShortString()}")
                     }
                 }
+                // 3.1.0 (the operator's word): the page fits the screen — on a short one the disc gives way — so Renew and Support
+                // are whole without scrolling; only where the disc is already at its least may the page still scroll
+                inst.waitForIdleSync()
+                SystemClock.sleep(400)
+                scenario.onActivity { a ->
+                    var v: View? = a.findViewById(R.id.btn_renew)
+                    while (v != null && v !is android.widget.ScrollView) v = v.parent as? View
+                    val sv = v as? android.widget.ScrollView
+                    val page = sv?.getChildAt(0)
+                    val ring = a.findViewById<View>(R.id.ring)
+                    val density = a.resources.displayMetrics.density
+                    fun dp(px: Int) = Math.round(px / density)
+                    if (sv != null && page != null && ring != null) {
+                        val room = sv.height - sv.paddingTop - sv.paddingBottom
+                        val over = page.height - room
+                        text.add("   the page is ${dp(page.height)} dp tall in ${dp(room)} dp of screen; the disc's box ${dp(ring.width)} x ${dp(ring.height)} dp, drawn at ${"%.2f".format(ring.scaleX)}")
+                        if (over > 0 && dp(ring.height) > 133) problems.add("the page is ${dp(over)} dp taller than the screen and the disc has not given way (its box is ${dp(ring.height)} dp)")
+                        if (over <= 0) {
+                            for ((what, id) in listOf("Renew" to R.id.btn_renew, "Support" to R.id.btn_support)) {
+                                val b = a.findViewById<View>(id) ?: continue
+                                val r = onScreen(b); val s = seen(b)
+                                if (s.width() != r.width() || s.height() != r.height()) problems.add("the page fits, yet $what is not whole without scrolling")
+                            }
+                        }
+                    } else problems.add("the page, its scroll view or the disc was not found")
+                }
                 shot(tag)
-                // the account card's two buttons: on a short screen they are below the edge and the page scrolls to them, as it did
-                // before 3.1.0 (nothing under the toolbar was changed) — brought into view, held to being whole, and photographed
+                // the account card's two buttons, brought into view (a no-op where the page fits), held to being whole, and photographed
                 scenario.onActivity { a ->
                     var v: View? = a.findViewById(R.id.btn_renew)
                     while (v != null && v !is android.widget.ScrollView) v = v.parent as? View
