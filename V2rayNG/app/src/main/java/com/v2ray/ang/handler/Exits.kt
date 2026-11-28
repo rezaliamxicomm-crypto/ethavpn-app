@@ -118,9 +118,14 @@ object Exits {
     fun updateOffered(version: String, latest: String?, min: String?, play: Boolean): Boolean =
         (latestFor(latest, play)?.let { isBelow(version, it) } ?: false) || (minVersion(min)?.let { isBelow(version, it) } ?: false)
 
-    /** The Update button (3.1.0): the store this build came from carries a newer version, as the box's last answer said. */
-    fun updateAvailable(): Boolean = updateOffered(BuildConfig.VERSION_NAME, MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_APP_LATEST),
-        MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_APP_MIN), BuildConfig.DISTRIBUTION == "Play")
+    /** The Update button (3.1.0): the store this build came from carries a newer version — the box's word in its last answer, or
+     *  (the direct build) what its own daily check of /dl/ found. */
+    fun updateAvailable(): Boolean {
+        val play = BuildConfig.DISTRIBUTION == "Play"
+        if (updateOffered(BuildConfig.VERSION_NAME, MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_APP_LATEST), MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_APP_MIN), play)) return true
+        val direct = MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_DIRECT_LATEST).orEmpty()
+        return !play && Regex("^\\d+\\.\\d+\\.\\d+$").matches(direct) && isBelow(BuildConfig.VERSION_NAME, direct)
+    }
 
     /** The update screen is due: the box's lowest Android version is above this build (X-Etha-App-Min). */
     fun updateDue(): Boolean = minVersion(MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_APP_MIN))?.let { isBelow(BuildConfig.VERSION_NAME, it) } ?: false

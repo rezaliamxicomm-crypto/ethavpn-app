@@ -5,12 +5,17 @@ package com.v2ray.ang.handler
  * engine fetched once on entering Searching and then every searchFetchSec, whether the call had reached the box or not:
  * a phone whose first call was lost waited a minute for its second.
  *
- *   - the first call at once (the engine has just measured every line: the report it carries is whole);
+ *   - the first call at once;
  *   - a call the box did not answer is tried again after 5 s, then 10 s, then every 20 s — for the first ten minutes of
- *     the search; after that every searchFetchSec, as before (a phone with no way out at all must not spend its battery);
- *   - a call the box answered without other lines: once more after 20 s — the box gives a phone that is still searching
- *     two more lines then — and after that every searchFetchSec.
+ *     the search; after that every searchFetchSec, as before;
+ *   - a call the box answered: the next after 20 s, twice — the engine's confirmed call ("every line failed") comes
+ *     between them by itself, and the box gives a phone that is still searching twenty seconds after its first call two
+ *     more lines — and after that every searchFetchSec;
+ *   - after those first ten minutes a call is made only while the phone is in use (traffic within warmSec, or the app on
+ *     screen) or once in IDLE_EVERY_MS: a phone with no way out at all, left in a pocket, does not dial every minute for
+ *     hours ([allowed]).
  *
+ * A search is an episode: a call that began in an earlier search says nothing of this one ([done] with its episode).
  * Times are monotonic milliseconds.
  */
 class SearchFetch {
@@ -20,23 +25,28 @@ class SearchFetch {
         private set
     var answers = 0
         private set
+    var episode = 0
+        private set
     private var beganAt = 0L
 
     /** Searching began: the first call is due now. */
     fun began(nowMs: Long) {
-        beganAt = nowMs; failures = 0; answers = 0; nextAt = nowMs
+        episode += 1; beganAt = nowMs; failures = 0; answers = 0; nextAt = nowMs
     }
 
-    /** A call is being made: nothing else is due until it ends ([done]). */
-    fun started(nowMs: Long, policy: AutoPolicy) {
+    /** A call is being made: nothing else is due until it ends ([done], which takes the episode this returns). */
+    fun started(nowMs: Long, policy: AutoPolicy): Int {
         nextAt = nowMs + policy.searchFetchMs
+        return episode
     }
 
-    /** A call ended. [answered]: the box answered it (lines, or its own refusal) — not: no way reached the box. */
-    fun done(nowMs: Long, answered: Boolean, policy: AutoPolicy) {
+    /** A call ended. [answered]: the box gave its own word (its lines, or its refusal) — not: no way reached the box. [of]: the
+     *  episode [started] returned; a call of an earlier search changes nothing. */
+    fun done(nowMs: Long, answered: Boolean, policy: AutoPolicy, of: Int = episode) {
+        if (of != episode) return
         if (answered) {
             failures = 0; answers += 1
-            nextAt = nowMs + if (answers == 1) minOf(REPEAT_MS, policy.searchFetchMs) else policy.searchFetchMs
+            nextAt = nowMs + if (answers <= 2) minOf(REPEAT_MS, policy.searchFetchMs) else policy.searchFetchMs
         } else {
             failures += 1
             val early = nowMs - beganAt <= EARLY_FOR_MS
@@ -46,16 +56,24 @@ class SearchFetch {
 
     fun due(nowMs: Long): Boolean = nowMs >= nextAt
 
+    /** May a call that is due be made now? Freely for the first ten minutes of the search; after that while the phone is in use
+     *  ([warm]: traffic within warmSec; [watched]: the app on screen), or when the last call began IDLE_EVERY_MS ago. */
+    fun allowed(nowMs: Long, warm: Boolean, watched: Boolean, lastStartMs: Long): Boolean =
+        nowMs - beganAt <= EARLY_FOR_MS || warm || watched || nowMs - lastStartMs >= IDLE_EVERY_MS
+
     companion object {
         /** the box's `widen_after`: a phone still searching this long after its first call is given more lines */
         const val REPEAT_MS = 20_000L
-        /** the quick retries of an unanswered call last this long into a search */
+        /** the quick retries of an unanswered call, and the calls of a phone nobody is using, last this long into a search */
         const val EARLY_FOR_MS = 600_000L
+        /** …after which a phone nobody is using calls this often */
+        const val IDLE_EVERY_MS = 600_000L
         /** a mark left by a search counts for this long */
         const val MARK_FRESH_MS = 60_000L
 
-        /** What a searching engine leaves in the store (at the search's start and at every step): when, and the labels it
-         *  holds. Whichever fetch then brings other lines, the engine that starts on them knows which are new. */
+        /** What a searching engine leaves in the store (at the search's start, every twenty seconds, and right before its own
+         *  restart): when, and the labels it holds. Whichever fetch then brings other lines, the engine that starts on them
+         *  knows which are new. */
         fun mark(nowMs: Long, held: Collection<String>): String = "$nowMs|${held.joinToString(",")}"
 
         /** The labels among [now] that the mark does not name — the lines the box has just given — or none when the mark

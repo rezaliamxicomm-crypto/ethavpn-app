@@ -33,8 +33,9 @@ import java.net.URI
 
 object AngConfigManager {
 
-    /** When the box last answered a fetch of our link — its lines or its own refusal, by any way (3.1.0). Auto's search reads
-     *  it before and after its call: a changed value is an answer, the same value a call that reached nobody (SearchFetch). */
+    /** When the box last gave its own signed word to a fetch of our link — its lines or its refusal, by any way (3.1.0). Auto's
+     *  search reads it before and after its call: a changed value is the box's answer, the same value a call that reached
+     *  nobody, or only something on the way that answered in its place (SearchFetch). */
     @Volatile var oursAnsweredAt = 0L
 
     // Parser mapping for different config types (lazy initialized)
@@ -614,7 +615,7 @@ object AngConfigManager {
             var response = if (ours) {
                 val outcome = EthaLinkFetch.fetch(url, it.guid, userAgent, extraHeaders, signature)
                 answered = outcome.answered
-                if (answered) oursAnsweredAt = System.nanoTime()   // the box answered — lines or its own refusal (3.1.0: Auto's search paces its calls by it)
+                if (outcome.answered && outcome.signed) oursAnsweredAt = System.nanoTime()   // the box's own signed word — its lines or its refusal (3.1.0: Auto's search paces its calls by it); a status with no signature (a 404 or 5xx of something on the way) is not that
                 if (outcome.answered && outcome.signed && outcome.status == 403) return refused(it, outcome.body)   // the box's own word: the subscription ended, or the device limit (3.0.0)
                 // the report is spent only when the box could file it under this phone's network: a fetch that won through the
                 // tunnel reaches the box from its own address and is filed as "through the tunnel" (ignored for the ranking) —
@@ -646,7 +647,7 @@ object AngConfigManager {
                     val held = MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_SIGNED_AT)?.toLongOrNull() ?: 0L
                     val verdict = if (EthaHopFetch.answered(r)) EthaLinkFetch.replayVerdict(r!!.signedAt, held, System.currentTimeMillis() / 1000) else "none"
                     val taken = verdict == "fresh" || verdict == "stale"
-                    if (taken) oursAnsweredAt = System.nanoTime()
+                    if (taken && r!!.signedAt > 0) oursAnsweredAt = System.nanoTime()
                     if (taken && r!!.status == 403) return refused(it, r.body)   // the box's own word by the last resort too (2.1.2)
                     if (taken) {
                         if (report.isNotEmpty() && MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_LINE_REPORT) == report) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINE_REPORT, "")

@@ -237,7 +237,8 @@ object AppConfig {
     const val PREF_ETHA_EXIT_MS = "pref_etha_exit_ms"           // code=ms,… the countries' last measured latencies (greyed before connecting)
     const val PREF_ETHA_APP_MIN = "pref_etha_app_min"           // the last X-Etha-App-Min
     const val PREF_ETHA_APP_LATEST = "pref_etha_app_latest"     // the last X-Etha-App-Latest (3.1.0): the newest version each store carries
-    const val PREF_ETHA_SEARCH_RESTART = "pref_etha_search_restart"   // "<wall ms>|label,…" left by a search's fetch that brought other lines (3.1.0): the next engine measures the new ones first
+    const val PREF_ETHA_SEARCH_RESTART = "pref_etha_search_restart"   // "<wall ms>|label,…" left by a searching engine (3.1.0): the engine that starts on other lines measures the new ones first
+    const val PREF_ETHA_DIRECT_LATEST = "pref_etha_direct_latest"     // the newest version the direct build's own daily check found (3.1.0): the Update button survives a new Home
     const val PREF_ETHA_DEVICES = "pref_etha_devices"           // the last device-limit refusal: limit,active,when
     // The rating ask (handler/RatePrompt): the phone's, not the account's — "Delete account" leaves them
     const val PREF_ETHA_RATE_CONNECTS = "pref_etha_rate_connects"            // connections that worked, made by hand

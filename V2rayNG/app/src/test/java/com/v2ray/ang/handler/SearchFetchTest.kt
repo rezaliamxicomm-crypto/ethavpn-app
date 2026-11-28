@@ -21,12 +21,35 @@ class SearchFetchTest {
     }
 
     @Test
-    fun anAnsweredCallThatBroughtNothingIsRepeatedOnceAfter20SecondsThenEverySearchFetchSec() {
+    fun anAnsweredCallIsFollowedAfter20SecondsTwiceThenEverySearchFetchSec() {
         val f = SearchFetch(); f.began(0); f.started(0, box)
-        f.done(1_000, true, box); assertFalse(f.due(20_999)); assertTrue(f.due(21_000))     // the box gives a phone still searching more lines then
-        f.started(21_000, box); f.done(22_000, true, box); assertFalse(f.due(81_999)); assertTrue(f.due(82_000))
-        f.started(82_000, box); f.done(83_000, false, box); assertTrue(f.due(88_000)); assertEquals(1, f.failures)   // an answer had ended the count
-        f.started(88_000, box); f.done(89_000, true, box); assertEquals(0, f.failures); assertEquals(3, f.answers)
+        f.done(1_000, true, box); assertFalse(f.due(20_999)); assertTrue(f.due(21_000))     // the engine's confirmed call comes in between by itself
+        f.started(3_000, box); f.done(4_000, true, box); assertFalse(f.due(23_999)); assertTrue(f.due(24_000))   // …and the box gives a phone still searching more lines twenty seconds on
+        f.started(24_000, box); f.done(25_000, true, box); assertFalse(f.due(84_999)); assertTrue(f.due(85_000))
+        f.started(85_000, box); f.done(86_000, false, box); assertTrue(f.due(91_000)); assertEquals(1, f.failures)   // an answer had ended the count
+        f.started(91_000, box); f.done(92_000, true, box); assertEquals(0, f.failures); assertEquals(4, f.answers)
+    }
+
+    @Test
+    fun aCallOfAnEarlierSearchSaysNothingOfThisOne() {
+        val f = SearchFetch(); f.began(0)
+        val first = f.started(0, box)                       // a call goes out…
+        f.began(8_000)                                      // …the search ends and another begins while it is out
+        assertTrue(f.due(8_000))
+        f.done(9_000, false, box, first)                    // the old call ends: it changes nothing
+        assertTrue(f.due(9_000)); assertEquals(0, f.failures); assertEquals(0, f.answers)
+        val second = f.started(9_000, box); f.done(10_000, true, box, second)
+        assertEquals(1, f.answers); assertFalse(f.due(29_999)); assertTrue(f.due(30_000))
+    }
+
+    @Test
+    fun afterTenMinutesACallWaitsForThePhoneToBeInUse() {
+        val f = SearchFetch(); f.began(0)
+        assertTrue(f.allowed(599_000, warm = false, watched = false, lastStartMs = 590_000))     // the first ten minutes: freely
+        assertFalse(f.allowed(700_000, warm = false, watched = false, lastStartMs = 650_000))    // later, nobody using the phone: not every minute
+        assertTrue(f.allowed(700_000, warm = true, watched = false, lastStartMs = 650_000))      // traffic is trying
+        assertTrue(f.allowed(700_000, warm = false, watched = true, lastStartMs = 650_000))      // the app is on screen
+        assertTrue(f.allowed(1_250_000, warm = false, watched = false, lastStartMs = 650_000))   // …but once in ten minutes all the same
     }
 
     @Test

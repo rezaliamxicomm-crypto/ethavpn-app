@@ -905,6 +905,7 @@ class HomeActivity : HelperBaseActivity() {
                 MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LAST_UPDATE_CHECK, System.currentTimeMillis())
                 if (result.hasUpdate) {
                     updateResult = result
+                    result.latestVersion?.let { MmkvManager.encodeSettings(AppConfig.PREF_ETHA_DIRECT_LATEST, it) }   // the Update button outlives this activity
                     showUpdatePill()
                     binding.tvUpdate.isVisible = true
                     binding.tvUpdate.text = if (result.mandatory) {
