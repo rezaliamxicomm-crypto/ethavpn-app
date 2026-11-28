@@ -1,0 +1,13 @@
+Home in 'en' (left to right), the store's newest version: 'android=9.9.9;ios=9.9.9;play=9.9.9'; Android API 36, density 2.8125
+   toolbar [0,125][1080,305] (64 dp high); the app's name not shown
+   Update button [45,169][411,259]: 130 x 32 dp, 16 dp from the reading edge, text 'Update the app'
+   menu button [933,158][1046,271]: 40 x 40 dp, 12 dp from the far edge
+   the fetch button says 'Refetch', the stamp 'Refetched 5 minutes ago'
+   Renew [56,2068][526,2209]
+   Support [554,2068][1024,2209]
+   Test latency [90,1373][526,1502]
+   the Server box [90,1165][990,1334]
+   the page is 701 dp tall in 701 dp of screen; the disc's box 166 x 166 dp; the disc drawn 122 x 122 dp (scale 0.81)
+   scrolled to the end: Renew [56,2068][526,2209], seen 470 x 141 of 470 x 141 px; the navigation bar begins at 2277
+   scrolled to the end: Support [554,2068][1024,2209], seen 470 x 141 of 470 x 141 px; the navigation bar begins at 2277
+RESULT: Home is as designed
