@@ -67,6 +67,7 @@ type echFetchRequest struct {
 	Headers       map[string]string `json:"headers"`       // extra request headers, sent on every way (X-Etha-Lines: what Auto measured)
 	Plain         bool              `json:"plain"`         // no ECH: a plain TLS fetch to the addresses given, the url's host as the certificate's name (the link hop inside Iran)
 	SignKeys      []string          `json:"signKeys"`      // the pinned public keys (base64, raw Ed25519): the answer's signature is checked against them (signature.go)
+	MaxBody       int64             `json:"maxBody"`       // the largest body taken, in bytes; 0 or more than echMaxBody: echMaxBody. The iPhone's tunnel fetches inside a process of about 50 MiB and asks for a small one (3.1.0)
 }
 
 type echFetchResult struct {
@@ -84,6 +85,7 @@ type echFetchResult struct {
 
 const (
 	echMaxBody        = 4 << 20
+	echMaxHead        = 64 << 10 // what the status line and the headers may take on top of the body: a header block has no bound of its own in net/http's reader
 	echDefaultTimeout = 20 * time.Second
 	echDNSTypeHTTPS   = 65
 )
@@ -137,6 +139,7 @@ type echRoute struct {
 	proxy         string
 	proxyUser     string
 	proxyPassword string
+	maxBody       int // the largest body taken (echFetchRequest.MaxBody); 0: echMaxBody
 }
 
 func fetchSubscriptionEch(req echFetchRequest) echFetchResult {
@@ -156,6 +159,9 @@ func fetchSubscriptionEch(req echFetchRequest) echFetchResult {
 	deadline := time.Now().Add(timeout)
 
 	route := echRoute{proxy: strings.TrimSpace(req.Proxy), proxyUser: req.ProxyUser, proxyPassword: req.ProxyPassword}
+	if req.MaxBody > 0 && req.MaxBody < echMaxBody {
+		route.maxBody = int(req.MaxBody)
+	}
 	if name := strings.TrimSpace(req.Interface); name != "" {
 		if echBindToInterface == nil {
 			return echFetchResult{Error: "ech: binding to an interface is not supported here"}
@@ -265,7 +271,7 @@ func plainFetchOnce(host, port, requestURI, addr, userAgent string, headers map[
 		return echFetchResult{}, err
 	}
 	_ = raw.SetDeadline(deadline) // the exchange itself may take what is left
-	res, err := echExchange(ctx, conn, host, requestURI, userAgent, headers)
+	res, err := echExchange(ctx, conn, host, requestURI, userAgent, headers, route.maxBody)
 	if err != nil {
 		return echFetchResult{}, err
 	}
@@ -302,7 +308,7 @@ func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, us
 		return echFetchResult{}, errors.New("ech not accepted by " + addr)
 	}
 	_ = raw.SetDeadline(deadline) // the exchange itself may take what is left
-	res, err := echExchange(ctx, conn, host, requestURI, userAgent, headers)
+	res, err := echExchange(ctx, conn, host, requestURI, userAgent, headers, route.maxBody)
 	if err != nil {
 		return echFetchResult{}, err
 	}
@@ -310,8 +316,15 @@ func echFetchOnce(host, port, requestURI, addr string, key []byte, keySource, us
 	return res, nil
 }
 
-// echExchange is the request and its answer on an open TLS connection, the same for both ways.
-func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent string, extra map[string]string) (echFetchResult, error) {
+// echExchange is the request and its answer on an open TLS connection, the same for both ways. Everything the server may
+// send is bounded before anything is believed of it (the signature is checked after): the body by maxBody (0: echMaxBody),
+// and the whole answer — status line, headers, the body's framing — by twice that and echMaxHead, so that neither a body
+// nor a header block of any size can grow the process that reads it.
+func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent string, extra map[string]string, maxBody int) (echFetchResult, error) {
+	limit := echMaxBody
+	if maxBody > 0 && maxBody < echMaxBody {
+		limit = maxBody
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+host+requestURI, nil)
 	if err != nil {
 		return echFetchResult{}, err
@@ -331,16 +344,16 @@ func echExchange(ctx context.Context, conn net.Conn, host, requestURI, userAgent
 	if err := httpReq.Write(conn); err != nil {
 		return echFetchResult{}, err
 	}
-	resp, err := http.ReadResponse(bufio.NewReader(conn), httpReq)
+	resp, err := http.ReadResponse(bufio.NewReader(io.LimitReader(conn, 2*int64(limit)+echMaxHead)), httpReq)
 	if err != nil {
 		return echFetchResult{}, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, echMaxBody+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 	if err != nil {
 		return echFetchResult{}, err
 	}
-	if len(body) > echMaxBody {
+	if len(body) > limit {
 		return echFetchResult{}, errors.New("response larger than the limit")
 	}
 	headers := make(map[string]string, len(resp.Header))

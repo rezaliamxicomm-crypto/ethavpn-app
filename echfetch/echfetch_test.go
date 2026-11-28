@@ -118,6 +118,17 @@ func testServer(t *testing.T, key tls.EncryptedClientHelloKey) (port string, acc
 		if r.TLS == nil || !r.TLS.ECHAccepted {
 			plainCount.Add(1)
 		}
+		if r.URL.Path == "/sub/big" && r.Host == testHost { // a body of 300 KB: more than a caller with a small limit takes
+			_, _ = w.Write([]byte(strings.Repeat("x", 300<<10)))
+			return
+		}
+		if r.URL.Path == "/sub/bighead" && r.Host == testHost { // a small body under 400 KB of headers
+			for i := 0; i < 400; i++ {
+				w.Header().Add("X-Fill", strings.Repeat("h", 1000))
+			}
+			_, _ = w.Write([]byte(testBody))
+			return
+		}
 		if r.URL.Path != "/sub/abc" || r.Host != testHost {
 			http.NotFound(w, r)
 			return
@@ -722,5 +733,55 @@ func TestPlainFetchRefusesAnotherNamesCertificate(t *testing.T) {
 	})
 	if res.Error == "" || res.Status != 0 || plain.Load() != 0 {
 		t.Fatalf("a certificate for another name must be refused before any request: %+v plain=%d", res, plain.Load())
+	}
+}
+
+func TestTheAnswerIsBoundedBeforeAnythingIsBelievedOfIt(t *testing.T) {
+	// The iPhone's tunnel fetches inside a process of about 50 MiB (3.1.0): it names the largest body it takes, and neither a
+	// larger body nor a header block of any size is read into memory — on the way with ECH and on the plain one (the hop).
+	list, key := testECHKey(t, 7)
+	port, _, _ := testServer(t, key)
+	ech := func(path string, maxBody int64) echFetchResult {
+		return fetchJSON(t, echFetchRequest{
+			URL:       "https://" + testHost + ":" + port + path,
+			Addresses: []string{"127.0.0.1"},
+			PinnedKey: base64.StdEncoding.EncodeToString(list),
+			TimeoutMs: 5000,
+			MaxBody:   maxBody,
+		})
+	}
+	if res := ech("/sub/abc", 64<<10); res.Error != "" || res.Status != 200 || res.Body != testBody {
+		t.Fatalf("an ordinary answer under a small limit: %+v", res)
+	}
+	if res := ech("/sub/big", 0); res.Error != "" || res.Status != 200 || len(res.Body) != 300<<10 {
+		t.Fatalf("300 KB with no limit named (the default, 4 MiB): error %q status %d body %d", res.Error, res.Status, len(res.Body))
+	}
+	if res := ech("/sub/big", 512<<10); res.Error != "" || len(res.Body) != 300<<10 {
+		t.Fatalf("300 KB under a limit of 512 KB: error %q body %d", res.Error, len(res.Body))
+	}
+	if res := ech("/sub/big", 100<<10); res.Error == "" || res.Status != 0 || res.Body != "" {
+		t.Fatalf("300 KB over a limit of 100 KB must be no answer: error %q status %d body %d", res.Error, res.Status, len(res.Body))
+	}
+	if res := ech("/sub/bighead", 64<<10); res.Error == "" || res.Status != 0 {
+		t.Fatalf("400 KB of headers over a limit of 64 KB must be no answer: error %q status %d", res.Error, res.Status)
+	}
+	if res := ech("/sub/big", 8<<20); res.Error != "" || len(res.Body) != 300<<10 {
+		t.Fatalf("a limit above the default is the default: error %q body %d", res.Error, len(res.Body))
+	}
+	plainPort, _, _ := testServer(t, tls.EncryptedClientHelloKey{})
+	plain := func(path string, maxBody int64) echFetchResult {
+		return fetchJSON(t, echFetchRequest{
+			URL:       "https://" + testHost + ":" + plainPort + path,
+			Addresses: []string{"127.0.0.1"},
+			Plain:     true,
+			TimeoutMs: 5000,
+			MaxBody:   maxBody,
+		})
+	}
+	if res := plain("/sub/abc", 64<<10); res.Error != "" || res.Status != 200 || res.Body != testBody {
+		t.Fatalf("the plain way, an ordinary answer under a small limit: %+v", res)
+	}
+	if res := plain("/sub/big", 100<<10); res.Error == "" || res.Status != 0 {
+		t.Fatalf("the plain way, 300 KB over a limit of 100 KB must be no answer: error %q status %d", res.Error, res.Status)
 	}
 }
