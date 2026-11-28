@@ -1,0 +1,8 @@
+Broadcasting: Intent { act=android.intent.action.CLOSE_SYSTEM_DIALOGS flg=0x400000 }
+Broadcast completed: result=0
+the emulator: Android 10 (API 29); Physical size: 1080x1920 ; Physical density: 480 ; navigation_mode 0 (0 = three buttons)
+app: SkyRay_3.1.0_x86_64.apk; test: app-direct-debug-androidTest.apk
+Performing Streamed Install
+Success
+Performing Streamed Install
+Success
