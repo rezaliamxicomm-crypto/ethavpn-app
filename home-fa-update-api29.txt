@@ -1,0 +1,13 @@
+Home in 'fa' (right to left), the store's newest version: 'android=9.9.9;ios=9.9.9;play=9.9.9'; Android API 29, density 3.0
+   toolbar [0,72][1080,264] (64 dp high); the app's name not shown
+   Update button [641,120][1032,216]: 130 x 32 dp, 16 dp from the reading edge, text 'به‌روزرسانی برنامه'
+   menu button [36,108][156,228]: 40 x 40 dp, 12 dp from the far edge
+   the fetch button says 'دریافت دوباره', the stamp 'آخرین دریافت ۵ دقیقه پیش'
+   Renew [555,2043][1020,2193]
+   Support [60,2043][525,2193]
+   Test latency [555,1299][984,1437]
+   the Server box [96,1077][984,1257]
+   the page is 667 dp tall in 504 dp of screen; the disc's box 132 x 132 dp; the disc drawn 97 x 97 dp (scale 0.65)
+   scrolled to the end: Renew [555,1554][1020,1704], seen 465 x 150 of 465 x 150 px; the navigation bar begins at 1776
+   scrolled to the end: Support [60,1554][525,1704], seen 465 x 150 of 465 x 150 px; the navigation bar begins at 1776
+RESULT: Home is as designed
