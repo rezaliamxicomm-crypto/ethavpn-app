@@ -211,7 +211,10 @@ class EthaAuto(
         // the engine's own fetch brought other lines: the engine that starts on them goes on with this search's pace
         // (SearchFetch.RESUME_MS); any other stop while searching — the VPN switched off, a refetch by hand — ends the search, and
         // the next one calls at once
-        if (searching) synchronized(searchFetches) { if (restartingForLines) searchFetches.ended(mono()) else searchFetches.reset() }
+        synchronized(searchFetches) {
+            if (restartingForLines) { if (searching) searchFetches.ended(mono()) }
+            else searchFetches.reset()                           // …also when the search had ended a moment before: switched off and on, the next search is new
+        }
         scope.cancel()
         saveHealth(force = true)
     }
@@ -317,7 +320,18 @@ class EthaAuto(
     private fun tickLocked(now: Long) {
         if (expired) return                                     // nothing to look for until the link answers again (2.1.2)
         if (startNew.isNotEmpty() && now - startedAt >= START_DELAY_MS) { startNewLocked(); return }
-        if (confirmDue) { confirmDue = false; if (searching && !synchronized(searchFetches) { searchFetches.confirmed }) { confirmLocked(); return } }
+        if (confirmDue) {
+            confirmDue = false
+            if (searching) {
+                // the link has just answered. Not told yet: the lines once more, then the box is told. Told already: the steps go on
+                // looking — unless they are held (past ten minutes with the phone put away): then this call's answer is the moment to
+                // look, so that a phone nobody touches finds its lines again by itself and not only when it is picked up
+                val told = synchronized(searchFetches) { searchFetches.confirmed }
+                val inUse = now - lastTrafficAt < policy.warmMs || now - watchedAt < WATCHED_FOR_MS
+                val held = !inUse && (schedule.searchingSince?.let { now - it > AutoSchedule.SEARCH_GATE_AFTER_MS } ?: false)
+                if (!told || held) { confirmLocked(); return }
+            }
+        }
         val stalled = synchronized(samples) { policy.stalled(samples.toList(), System.currentTimeMillis()) }
         if (stalled && !searching && now >= stallQuietUntil) {
             stallQuietUntil = now + STALL_PROBE_GAP_MS
@@ -624,13 +638,29 @@ class EthaAuto(
     private fun confirmLocked() {
         val cur = byGuid[current] ?: return
         val all = everyLine(listOf(cur))
+        val told = synchronized(searchFetches) { searchFetches.confirmed }
         // the window of the sweep, not of the failover: a signal that has just come back — the link has answered — may need more than a
         // second and a half for a line's first request, and "every line failed" must not rest on the shortest window in the engine
-        val out = measureOnce(all, all.size, if (schedule.fallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, minOf(policy.probeTimeoutMs, SWEEP_TIMEOUT_MS))
+        val window = minOf(policy.probeTimeoutMs, SWEEP_TIMEOUT_MS)
+        // beside it, as in the sweep, a few lines against the fallback target: no answer from the box's target and one from the fallback
+        // means the target is down, not the lines — and the box is not to be told that every line failed for that
+        val control = all.take(BACKUPS + 1)
+        val beside: FutureTask<Map<String, Long>>? = if (schedule.fallback) null
+            else FutureTask(Callable { measureOnce(control, control.size, AppConfig.ETHA_PROBE_FALLBACK_URL, window, recordCold = false) })
+        if (beside != null) Thread(beside, "etha-confirm-fallback").start()
+        val out = measureOnce(all, all.size, if (schedule.fallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, window)
+        val fb: Map<String, Long> = try { beside?.get() ?: emptyMap() } catch (_: Exception) { emptyMap() }
         if (out.isEmpty()) return                                // no measurement at all: the next answered call asks again
-        if (all.any { answers(out, it.guid) }) {
-            record(out, all, condemn = false)
-            val best = all.filter { answers(out, it.guid) }.minByOrNull { out[it.guid] ?: Long.MAX_VALUE }
+        var seen = out
+        var among = all
+        if (out.values.none { it > 0 } && fb.values.any { it > 0 }) {
+            schedule.fallback = true
+            LogUtil.w(AppConfig.TAG, "Auto: the probe target gave no answer on any line but the fallback answers: measuring against the fallback until the target answers again")
+            seen = fb; among = control
+        }
+        if (among.any { answers(seen, it.guid) }) {
+            record(seen, among, condemn = false)
+            val best = among.filter { answers(seen, it.guid) }.minByOrNull { seen[it.guid] ?: Long.MAX_VALUE }
             if (best != null && best.guid != current && switchTo(best.guid, "a line answers again")) {
                 decision.moved(mono())
                 movedWhileSearching = true
@@ -638,6 +668,7 @@ class EthaAuto(
             updateSearchingLocked()                              // the search is over: forgiven, reported
             return
         }
+        if (told) return                                         // the box has been told in this search: this was a look for lines that came back
         synchronized(searchFetches) { searchFetches.noteConfirmed() }   // spent by a report that is made — not by a confirmation that found a line (which may yet carry nothing)
         record(out, all, condemn = false, note = true)           // nothing held against a line; every one of them goes into this report
         report("search", false)
@@ -681,12 +712,19 @@ class EthaAuto(
         if (which.isEmpty()) return
         searchSteps += 1
         val scout = schedule.fallback && searchSteps % 10 == 0
-        val url = if (schedule.fallback && !scout) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL
+        // on the box's target, every fourth step asks the fallback instead (3.1.0): a search that holds must find out by itself that
+        // it is the target that is down, not the lines — until the hold a search ended at its first step and the next failover asked
+        val other = !schedule.fallback && searchSteps % FALLBACK_STEP_EVERY == 0
+        val url = if ((schedule.fallback && !scout) || other) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL
         val out = measureOnce(which, which.size, url, policy.probeTimeoutMs)
         if (scout) {
             val back = out.values.any { it > 0 }
             schedule.fallback = AutoSchedule.nextFallback(current = true, targetAnswered = back, fallbackAnswered = false)
             if (back) LogUtil.i(AppConfig.TAG, "Auto: the probe target answers again; measuring against it")
+        }
+        if (other && which.any { answers(out, it.guid) }) {
+            schedule.fallback = true
+            LogUtil.w(AppConfig.TAG, "Auto: no line answered the probe target and the fallback answers: measuring against the fallback until the target answers again")
         }
         if (out.isNotEmpty()) record(out, which, condemn = false)   // while searching no failure is held against a line
         schedule.searchStep(mono(), which.size, policy, slow = hint?.outage ?: false)
@@ -1210,6 +1248,7 @@ class EthaAuto(
         private const val BACKUPS = 3                          // the failover probes the line in use with this many other lines (3.1.0)
         private const val SWEEP_TIMEOUT_MS = 3_000L            // every line at once: a line that says nothing in this long is no way out now
         private const val MAX_AT_ONCE = 16                     // …and never more lines than this in one measurement
+        private const val FALLBACK_STEP_EVERY = 4              // a search on the box's target asks the fallback at every such step
         private const val PULL_FAILED_FOR_MS = 60_000L         // a line whose pull failed is not believed by its HEAD for this long
 
         // Process-wide, not the engine's: an engine lives from one start of the core to the next, and a fetch that brings other
