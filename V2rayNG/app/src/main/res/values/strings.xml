@@ -504,8 +504,8 @@
     <string name="etha_expired">Expired. Renew to keep connecting.</string>
     <string name="etha_data_used">%1$s of %2$s used</string>
     <string name="etha_data_unlimited">Unlimited data</string>
-    <string name="etha_data_unknown">Data: unknown until the next refresh</string>
-    <string name="etha_refresh">Refresh</string>
+    <string name="etha_data_unknown">Data: unknown until the next refetch</string>
+    <string name="etha_refresh">Refetch</string>
     <string name="etha_renew">Renew</string>
     <string name="etha_support">Support</string>
     <string name="etha_advanced">Advanced (servers, settings)</string>
@@ -551,8 +551,8 @@
     <string name="etha_fastest">Fastest</string>
     <string name="etha_auto_now">Now %s</string>
     <string name="etha_auto_hint">The fastest line is picked for you</string>
-    <string name="etha_updated">Updated %s</string>
-    <string name="etha_updated_never">Not updated yet</string>
+    <string name="etha_updated">Refetched %s</string>
+    <string name="etha_updated_never">Not fetched yet</string>
     <string name="etha_privacy_policy">Privacy policy</string>
     <string name="etha_delete_account">Delete account</string>
     <string name="etha_delete_account_hint">Removes your subscription and all its data from this phone</string>
@@ -576,10 +576,10 @@
     <string name="etha_state_searching">Searching for a line…</string>
     <string name="etha_state_expired">Subscription expired</string>
     <string name="etha_expired_short">Expired</string>
-    <string name="etha_expired_hint">Expired. Renew in the bot, then tap Refresh.</string>
+    <string name="etha_expired_hint">Expired. Renew in the bot, then tap Refetch.</string>
     <string name="etha_no_answer_yet">No answer yet</string>
     <string name="etha_no_line_answers">No line answers</string>
-    <string name="etha_searching_hint">Tap Refresh. Still nothing? Tap Support.</string>
+    <string name="etha_searching_hint">Tap Refetch. Still nothing? Tap Support.</string>
     <string name="etha_lines_blocked">Lines are blocked on this network right now. We are working on it.</string>
     <string name="etha_switched_faster">Switched to a faster line</string>
     <string name="etha_on_fastest">On the fastest line</string>
@@ -604,4 +604,5 @@
     <string name="etha_update_title">Update SkyRay</string>
     <string name="etha_update_text">This version no longer works with the service. Update to keep connecting.</string>
     <string name="etha_update_now">Update</string>
+    <string name="etha_update_app">Update the app</string>
 </resources>

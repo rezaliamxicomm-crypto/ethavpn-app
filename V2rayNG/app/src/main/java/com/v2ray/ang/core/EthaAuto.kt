@@ -11,10 +11,12 @@ import com.v2ray.ang.handler.AutoDecision
 import com.v2ray.ang.handler.AutoPolicy
 import com.v2ray.ang.handler.AutoSchedule
 import com.v2ray.ang.handler.AutoSelect
+import com.v2ray.ang.handler.Backups
 import com.v2ray.ang.handler.EthaReport
 import com.v2ray.ang.handler.Hint
 import com.v2ray.ang.handler.LineHealth
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.handler.SearchFetch
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MessageUtil
@@ -29,7 +31,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import libv2ray.CoreController
 import libv2ray.Libv2ray
+import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.FutureTask
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -49,20 +53,25 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   - moves (AutoDecision): the first pass corrects a cold pick once, for a line clearly better; steady state moves only
  *     for a lead that persists over two pass ends (or is twice the margin), never within the dwell; a manual test by the
  *     margin alone. A change of line moves new connections only and cuts nothing that is open;
- *   - failover, make-before-break: a stall (bytes out, none back for stallSec) or a failed full-window probe of the line
- *     in use probes it and the best alternative not yet tried together within failoverMs; the line in use answering means
- *     nothing happens (and the alarm rests a minute: an upload has no downlink); it failing and the alternative answering
- *     moves at once — only then is the old line held as failed; the alternative failing too tries the next, once; then
- *     Searching. The short window itself condemns nobody. One quiet fetch follows a failover (at most one in ten minutes);
+ *   - failover (3.1.0): a stall (bytes out, none back for stallSec) or a failed full-window probe of the line in use
+ *     probes it together with up to three backups in other ranges (Backups) within failoverMs; the line in use answering
+ *     means nothing happens (and the alarm rests a minute: an upload has no downlink); it failing and a backup answering
+ *     moves new connections at once — the fastest that answered, pulled after the move, the next one when it carries
+ *     nothing; no backup answering: every line at once within SWEEP_TIMEOUT_MS, the same lines against the fallback target
+ *     beside it (one measurement's time, not two); then Searching. The short windows condemn nobody. One quiet fetch
+ *     follows a failover (at most one in ten minutes). Until 3.0.4: one alternative, then one more, then Searching;
  *   - a failed line backs off (15 → 30 → 60 → 120 min) and the memory of the network is kept across sessions (MMKV, per
  *     network signature); a network change loads the new network's memory intact (leaving a dead line for its known-good
  *     one at once) and restarts the first pass in 15 s; the same network coming back forgives every line; idle, nothing
  *     runs; traffic returning probes the line in use once;
- *   - Searching (nothing answers: every line failed or waits its retry, the line in use among the failed): every line in
- *     turn, two at a time, each once per searchSec, three times slower when the box says the network blocks everything,
- *     only warm or on screen after ten minutes; no failure is held against a line meanwhile, and leaving forgives them
- *     all; the subscription is fetched again at once and every searchFetchSec; a fetch that brings other lines restarts
- *     the core on them (onLinesChanged);
+ *   - Searching (nothing answers: every line failed or waits its retry, the line in use among the failed): every line at
+ *     once, once per searchSec (3.1.0), three times slower when the box says the network blocks everything, only warm or
+ *     on screen after ten minutes; no failure is held against a line meanwhile, and leaving forgives them all; the
+ *     subscription is fetched again at once — its report names every line, so the box can answer with lines in other
+ *     ranges in that same call — and then as SearchFetch says (an unanswered call after 5, 10, 20 s; an answered one
+ *     once more after 20 s, then every searchFetchSec); a fetch that brings other lines restarts the core on them
+ *     (onLinesChanged), and the engine that starts on them puts new connections on the first new line and measures the
+ *     new lines before anything else;
  *   - the box's probe target, the fallback only while the target answers nobody (one probe of the line in use against the
  *     fallback decides before Searching; every tenth probe while on the fallback is a scout back);
  *   - the line in use's time goes to the UI as it is measured (MSG_ETHA_LATENCY: the chip); a move is said with
@@ -106,6 +115,7 @@ class EthaAuto(
     private val labels = lines.associate { it.guid to (EthaReport.label(remarks[it.guid]) ?: remarks[it.guid] ?: it.guid) }
     private val byLabel = HashMap<String, String>().also { m -> for (l in lines) m.putIfAbsent(labels.getValue(l.guid), l.guid) }
     private val inboundTag = if (SettingsManager.isVpnMode() && !SettingsManager.isUsingHevTun()) "tun" else "socks"
+    private val servers = lines.associate { it.guid to MmkvManager.decodeServerConfig(it.guid)?.server }   // each line's address: the failover's backups come from other ranges (3.1.0)
 
     @Volatile var current: String = start
         private set
@@ -129,12 +139,14 @@ class EthaAuto(
     @Volatile private var watchedAt = -1_000_000L
     @Volatile private var searching = false
     @Volatile private var outage = false
-    @Volatile private var lastSearchFetchAt = 0L
+    private val searchFetches = SearchFetch()                    // when the subscription is fetched again while searching (3.1.0); under its own lock
+    private var startNew: List<Line> = emptyList()               // the core restarted on lines a search's call brought: they are measured first (3.1.0)
     @Volatile private var lastFailoverFetchAt = -1_000_000L
     @Volatile private var stopped = false
     private var movedInPass = false
     private var movedWhileSearching = false
     private val probedSinceReport = HashSet<String>()
+    private val noted = HashSet<String>()                        // lines whose -1 in results is a note for the report, not a failure held against them (3.1.0); under the mutex
     private var probesThisPass = 0
     private var searchSteps = 0
     private val fetching = AtomicBoolean(false)
@@ -159,6 +171,19 @@ class EthaAuto(
             val best = known ?: advice?.arrange(all)?.firstOrNull { !health.isDead(it) && it !in advice.dead }
             val guid = best?.let { byLabel[it] }
             if (guid != null && guid != current) switchTo(guid, if (known != null) "known best on $network" else "the box's advice", notify = false)
+        }
+        // 3.1.0: the engine before this one was searching (markSearching left the lines it held) and a fetch has brought others: the
+        // old lines have just failed whatever the memory says of them, so new connections take the first new line now — the best
+        // of them by the box's advice — and the new lines are measured before anything else (startNewLocked)
+        val mark = MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_SEARCH_RESTART).orEmpty()
+        if (mark.isNotEmpty()) {
+            MmkvManager.encodeSettings(AppConfig.PREF_ETHA_SEARCH_RESTART, "")
+            val fresh = SearchFetch.newSince(mark, all, System.currentTimeMillis())
+            if (fresh.isNotEmpty()) {
+                startNew = fresh.mapNotNull { byLabel[it] }.mapNotNull { byGuid[it] }
+                val first = (hint?.arrange(fresh) ?: fresh).firstOrNull()?.let { byLabel[it] }
+                if (first != null && first != current) switchTo(first, "a line the box just gave", notify = false)
+            }
         }
         startedAt = mono(); lastPassAt = startedAt
         schedule.start(startedAt, order(), START_DELAY_MS)   // the first probe two seconds on, when the tunnel has settled (2.1.1)
@@ -279,6 +304,7 @@ class EthaAuto(
 
     private fun tickLocked(now: Long) {
         if (expired) return                                     // nothing to look for until the link answers again (2.1.2)
+        if (startNew.isNotEmpty() && now - startedAt >= NEW_LINES_DELAY_MS) { startNewLocked(); return }
         val stalled = synchronized(samples) { policy.stalled(samples.toList(), System.currentTimeMillis()) }
         if (stalled && !searching && now >= stallQuietUntil) {
             stallQuietUntil = now + STALL_PROBE_GAP_MS
@@ -286,7 +312,7 @@ class EthaAuto(
             failoverLocked("stall")
             return
         }
-        if (searching && now - lastSearchFetchAt >= policy.searchFetchMs) searchFetch()
+        if (searching && synchronized(searchFetches) { searchFetches.due(now) }) searchFetch()
         val warm = now - lastTrafficAt < policy.warmMs
         val inUse = now - lastTrafficAt < policy.idleMs
         if (inUse && !wasInUse) { schedule.wake(now); LogUtil.i(AppConfig.TAG, "Auto: traffic is back after the idle gap; the line in use is probed") }
@@ -415,23 +441,17 @@ class EthaAuto(
         }
     }
 
-    /** Make-before-break: the line in use and the best alternative not yet tried probed together within failoverMs. The
-     *  line in use answering: nothing moves, the alarm rests a minute. It failing and the alternative answering: new
-     *  connections move at once, and only then is the old line held as failed. The alternative failing too: the next, once
-     *  more; nothing answering: Searching. The short window itself condemns nobody — answers are kept, failures not. */
-    private fun failoverLocked(reason: String, tried: Set<String> = emptySet(), attempt: Int = 1, currentFailed: Boolean = false) {
+    /** The failover (3.1.0): the line in use and up to three backups in other ranges probed together within failoverMs. The
+     *  line in use answering: nothing moves, the alarm rests a minute. It failing and a backup answering: new connections move
+     *  at once to the fastest that answered, and only then is the old line held as failed; the line taken is pulled, and left
+     *  for the next that answered when it carries nothing. No backup answering: every line at once (sweepLocked). The short
+     *  window itself condemns nobody — answers are kept, failures not. [currentFailed]: the line in use is already known not
+     *  to carry (a failed pull): not probed again. */
+    private fun failoverLocked(reason: String, currentFailed: Boolean = false) {
         val cur = byGuid[current] ?: return
-        var curDead = currentFailed                           // the line in use already known not to carry (a failed pull): not probed again
-        val all = lines.map { labels.getValue(it.guid) }
-        val mine = labels.getValue(current)
-        val excluded = tried + mine
-        val advice = hint
-        val arranged = advice?.arrange(all) ?: all
-        val altLabel = health.bestKnown(all, except = mine)?.takeIf { it !in excluded }
-            ?: arranged.firstOrNull { it !in excluded && !health.isDead(it) && (advice == null || it !in advice.dead) }
-            ?: arranged.firstOrNull { it !in excluded }
-        val alt = altLabel?.let { byLabel[it] }?.let { byGuid[it] }
-        val which = if (curDead) listOfNotNull(alt) else listOfNotNull(cur, alt)
+        var curDead = currentFailed
+        val backups = backupsFor(cur)
+        val which = if (curDead) backups else listOf(cur) + backups
         if (which.isEmpty()) { condemn(cur.guid); updateSearchingLocked(force = true); return }
         val out = measureOnce(which, which.size, if (schedule.fallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, policy.failoverMs.toLong())
         if (out.isEmpty()) return
@@ -449,56 +469,139 @@ class EthaAuto(
             curDead = true
             LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(current)} answers but carries nothing: the stall is real")
         }
-        if (alt != null && (out[alt.guid] ?: -1L) > 0) {
-            if (pullLocked(alt, "w")?.carries == false) {       // the candidate answers but carries nothing (2.1.2): not it, the next one
+        val answered = backups.filter { (out[it.guid] ?: -1L) > 0 }.sortedBy { out[it.guid] ?: Long.MAX_VALUE }
+        if (moveToFirstThatCarries(cur, answered, "failover after $reason")) return
+        // neither the line in use nor a backup: every line at once, and whether it is the probe target that is down
+        sweepLocked(cur, backups, reason, curDead)
+    }
+
+    /** Up to BACKUPS other lines for the failover: the ones this network's memory knows good (by time), then the ones it has
+     *  not seen (in the box's advised order) — each in another range than the line in use and than each other where there are
+     *  such (Backups) —, and only to make the count the ones held as failed or called dead by the box. */
+    private fun backupsFor(cur: Line): List<Line> {
+        val advice = hint
+        val others = order().filter { it != cur.guid }
+        val out = { g: String -> health.isDead(labels.getValue(g)) || (advice != null && labels.getValue(g) in advice.dead) }
+        val asLine = { g: String -> Backups.Line(g, servers[g], labels[g]) }
+        return Backups.pick(asLine(cur.guid), others.filter { !out(it) }.map(asLine), BACKUPS, others.filter(out).map(asLine)).mapNotNull { byGuid[it] }
+    }
+
+    /** New connections move to the first of [answered] (lines that answered a moment ago, best first) that carries: the move
+     *  comes first — the line left behind has just failed, and the pull takes its second or its three — and the line taken is
+     *  then pulled (2.1.2: a line that answers a HEAD may carry nothing); one that carries nothing is held as failed and the
+     *  next takes over. True when a line was taken: the box is told (the report, one quiet fetch). [curAnswers]: the line in
+     *  use answered too (slower): it is not held as failed, and when nothing else carries new connections go back to it. */
+    private fun moveToFirstThatCarries(cur: Line, answered: List<Line>, why: String, curAnswers: Boolean = false): Boolean {
+        var moved = false
+        for (alt in answered) {
+            if (alt.guid == cur.guid) continue
+            if (!switchTo(alt.guid, why)) continue
+            if (!moved) { if (!curAnswers) condemn(cur.guid); moved = true }
+            if (pullLocked(alt, "w")?.carries == false) {           // it answers but carries nothing: not it, the next one
+                LogUtil.w(AppConfig.TAG, "Auto: ${nameOf(alt.guid)} answers but carries nothing: the next line that answered")
                 condemn(alt.guid)
-                if (attempt < 2) { failoverLocked(reason, tried + labels.getValue(alt.guid), attempt + 1, currentFailed = curDead); return }
-                condemn(cur.guid)
-                updateSearchingLocked(force = true)
-                return
+                continue
             }
-            condemn(cur.guid)
-            switchTo(alt.guid, "failover after $reason")
             decision.moved(mono())
             report("failover", true)
             saveHealth()
             failoverFetch()
+            return true
+        }
+        if (moved && curAnswers) switchTo(cur.guid, "nothing else carries: back to it")
+        return false
+    }
+
+    /** Every line at once (3.1.0) within SWEEP_TIMEOUT_MS — the failover's last step before Searching, where until 3.0.4 one
+     *  more alternative was tried. Beside it, on another thread, the lines the failover has just tried ([cur] and [tried])
+     *  against the fallback target: an answer there with none from the box's target means the target is down, not the lines
+     *  (the core library's measurement keeps nothing between calls: two may run at once). The fastest line that answers takes
+     *  new connections — the line in use itself when it is the fastest (it answers in the longer window: staying). Nothing
+     *  on either target: the line in use is held as failed, every line goes into the report as failed — the box answers such
+     *  a report with lines in other ranges in the same call — and Searching begins. [curCarriesNothing]: a pull has shown
+     *  that the line in use answers and carries nothing: its answer here counts for nothing. */
+    private fun sweepLocked(cur: Line, tried: List<Line>, reason: String, curCarriesNothing: Boolean = false) {
+        val timeout = minOf(policy.probeTimeoutMs, SWEEP_TIMEOUT_MS)
+        val onFallback = schedule.fallback
+        val control = listOf(cur) + tried.filter { it.guid != cur.guid }
+        val beside: FutureTask<Map<String, Long>>? = if (onFallback) null
+            else FutureTask(Callable { measureOnce(control, control.size, AppConfig.ETHA_PROBE_FALLBACK_URL, timeout, recordCold = false) })
+        if (beside != null) Thread(beside, "etha-sweep-fallback").start()
+        val out = measureOnce(lines, lines.size, if (onFallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, timeout)
+        val fb: Map<String, Long> = try { beside?.get() ?: emptyMap() } catch (_: Exception) { emptyMap() }
+        if (out.isEmpty()) return                                // no measurement at all (the core restarting)
+        var seen: Map<String, Long> = out
+        var among: List<Line> = lines
+        if (out.values.none { it > 0 } && fb.values.any { it > 0 }) {
+            schedule.fallback = true
+            LogUtil.w(AppConfig.TAG, "Auto: the probe target gave no answer on any line but the fallback answers: measuring against the fallback until the target answers again")
+            seen = fb; among = control
+            record(fb, control, condemn = false)
+        } else {
+            record(out, lines, condemn = false, note = true)     // nothing held against a line, but every one of them goes into the report
+        }
+        val curAnswers = !curCarriesNothing && (seen[cur.guid] ?: -1L) > 0
+        val alive = among.filter { (seen[it.guid] ?: -1L) > 0 && (curAnswers || it.guid != cur.guid) }.sortedBy { seen[it.guid] ?: Long.MAX_VALUE }
+        if (alive.firstOrNull()?.guid == cur.guid) {             // the line in use answers, and nothing answers faster: staying
+            stallQuietUntil = mono() + STALL_FALSE_ALARM_REST_MS
+            LogUtil.i(AppConfig.TAG, "Auto: ${nameOf(cur.guid)} answers within ${timeout} ms and nothing answers faster ($reason): staying")
             return
         }
-        val next = if (alt != null) tried + labels.getValue(alt.guid) else tried
-        if (attempt < 2 && alt != null) { failoverLocked(reason, next, attempt + 1, currentFailed = curDead); return }
-        // nothing answered the line in use nor two alternatives: the line in use is held as failed and Searching decides
+        if (moveToFirstThatCarries(cur, alive, "failover after $reason", curAnswers)) return
+        if (curAnswers) { stallQuietUntil = mono() + STALL_FALSE_ALARM_REST_MS; return }   // back on the line in use, which answers
         condemn(cur.guid)
-        updateSearchingLocked(force = true)
+        updateSearchingLocked(force = true, swept = true)
+    }
+
+    /** The core restarted on lines a search's call brought (3.1.0): they are measured before anything else, at once, and the
+     *  fastest takes new connections (start() has already put them on the first). None of them answering: every line at once,
+     *  as after a failover. The first pass follows in its own time and measures the rest. */
+    private fun startNewLocked() {
+        val which = startNew
+        startNew = emptyList()
+        val cur = byGuid[current] ?: return
+        val out = measureOnce(which, which.size, if (schedule.fallback) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL, minOf(policy.probeTimeoutMs, SWEEP_TIMEOUT_MS))
+        if (out.isEmpty()) return
+        record(out, which, condemn = false, note = true)
+        val best = which.filter { (out[it.guid] ?: -1L) > 0 }.minByOrNull { out[it.guid] ?: Long.MAX_VALUE }
+        if (best == null) {
+            LogUtil.w(AppConfig.TAG, "Auto: none of the ${which.size} line(s) the box just gave answers: every line at once")
+            sweepLocked(cur, which, "new lines")
+            return
+        }
+        LogUtil.i(AppConfig.TAG, "Auto: the box's new lines answer; the fastest is ${nameOf(best.guid)}")
+        if (best.guid != current && switchTo(best.guid, "the fastest of the lines the box just gave")) decision.moved(mono())
     }
 
     /** The line failed for good within this session: its result and its memory say so (its retry backs off). */
     private fun condemn(guid: String) {
-        val again = results[guid] == -1L                         // already held as failed this episode: one failure on the memory, not two (2.1.2)
+        val again = results[guid] == -1L && guid !in noted       // already held as failed this episode: one failure on the memory, not two (2.1.2) — a note is not that
+        noted.remove(guid)
         results[guid] = -1L
         if (!again) health.failed(labels.getValue(guid), System.currentTimeMillis() / 1000, policy)
         synchronized(probedSinceReport) { probedSinceReport.add(guid) }
         if (guid == current) tellLatency()
     }
 
-    /** Searching: a step over every line in turn (two lines). The first to answer takes new connections. Every tenth step on
-     *  the fallback scouts the box's target. */
+    /** Searching: every line at once (3.1.0; two a step until then), once per searchSec. The fastest to answer takes new
+     *  connections. Every tenth step on the fallback scouts the box's target. */
     private fun searchStepLocked(ids: List<String>) {
         val which = ids.mapNotNull { byGuid[it] }
         if (which.isEmpty()) return
         searchSteps += 1
         val scout = schedule.fallback && searchSteps % 10 == 0
         val url = if (schedule.fallback && !scout) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL
-        val out = measureOnce(which, which.size, url, policy.probeTimeoutMs)
+        val out = measureOnce(which, which.size, url, minOf(policy.probeTimeoutMs, SWEEP_TIMEOUT_MS))
         if (scout) {
             val back = out.values.any { it > 0 }
             schedule.fallback = AutoSchedule.nextFallback(current = true, targetAnswered = back, fallbackAnswered = false)
             if (back) LogUtil.i(AppConfig.TAG, "Auto: the probe target answers again; measuring against it")
         }
-        if (out.isNotEmpty()) record(out, which, condemn = false)   // while searching no failure is held against a line
-        schedule.searchStep(mono(), which.size, policy, slow = hint?.outage ?: false)
-        if (searchSteps % 30 == 0) refreshHint()
-        val found = which.firstOrNull { (out[it.guid] ?: -1L) > 0 }
+        if (out.isNotEmpty()) record(out, which, condemn = false, note = true)   // while searching no failure is held against a line; the report names them all
+        schedule.searchStep(mono(), policy, slow = hint?.outage ?: false)
+        markSearching(true)
+        if (searchSteps % 8 == 0) refreshHint()
+        val found = which.filter { (out[it.guid] ?: -1L) > 0 }.minByOrNull { out[it.guid] ?: Long.MAX_VALUE }
         if (found != null && found.guid != current) {
             switchTo(found.guid, "a line answers again")
             decision.moved(mono())
@@ -563,13 +666,16 @@ class EthaAuto(
     }
 
     /** Results into the engine, the memory of the network and the app's store; the line in use's number to the chip.
-     *  [condemn]: whether a failure is held against the line (not from a short failover window, not while searching). */
-    private fun record(out: Map<String, Long>, which: List<Line>, condemn: Boolean = true) {
+     *  [condemn]: whether a failure is held against the line (not from a short failover window, not while searching).
+     *  [note] (3.1.0): a failure not held against the line still goes into the engine's results and the next report — a
+     *  measurement of every line that found nothing is exactly what the box needs to hear. */
+    private fun record(out: Map<String, Long>, which: List<Line>, condemn: Boolean = true, note: Boolean = false) {
         if (stopped) return
         val wallSec = System.currentTimeMillis() / 1000
         for ((guid, ms) in out) {
             if (ms > 0) {
                 results[guid] = ms
+                noted.remove(guid)
                 health.ok(labels.getValue(guid), ms, wallSec)
                 if (guid == current) {
                     firstReading = true
@@ -577,7 +683,11 @@ class EthaAuto(
                 }
             } else if (condemn) {
                 results[guid] = ms
+                noted.remove(guid)
                 health.failed(labels.getValue(guid), wallSec, policy)
+            } else if (note) {
+                if (results[guid] != -1L) noted.add(guid)        // a line already held as failed stays held
+                results[guid] = ms
             } else continue
             synchronized(probedSinceReport) { probedSinceReport.add(guid) }
             MmkvManager.encodeServerTestDelayMillis(guid, ms)
@@ -860,10 +970,10 @@ class EthaAuto(
      *  (LineHealth.allOut) — or the failover exhausted its alternatives ([force]). Before entering it the line in use is
      *  probed against the fallback once: an answer there means the target is down, not the lines. Entering turns the clock
      *  to the search pace and fetches the subscription; leaving re-seeds the clock, forgives every line and reports. */
-    private fun updateSearchingLocked(force: Boolean = false) {
+    private fun updateSearchingLocked(force: Boolean = false, swept: Boolean = false) {
         val all = lines.map { labels.getValue(it.guid) }
         val dead = force || health.allOut(all, labels.getValue(current)) { resultOf(it) }
-        if (dead && !searching && !schedule.fallback) {
+        if (dead && !searching && !schedule.fallback && !swept) {   // [swept]: the sweep has just asked the fallback, beside its own measurement
             val cur = byGuid[current]
             if (cur != null) {
                 val out = measureOnce(listOf(cur), 1, AppConfig.ETHA_PROBE_FALLBACK_URL, policy.probeTimeoutMs)
@@ -887,10 +997,13 @@ class EthaAuto(
         if (dead) {
             searchSteps = 0
             movedWhileSearching = false
-            schedule.searchingBegan(now)
+            schedule.searchingBegan(now, if (swept) now + policy.searchMs else now)   // after a sweep the next look is a searchSec on
+            synchronized(searchFetches) { searchFetches.began(now) }
+            markSearching(true)
             report("search", false)
             searchFetch()
         } else {
+            markSearching(false)
             health.forgive()                                      // what failed during the outage may well pass now
             schedule.reseed(now, order(), policy, Math.random())
             probesThisPass = 0
@@ -900,13 +1013,17 @@ class EthaAuto(
         saveHealth()
     }
 
-    /** The subscription fetched again (the link's own route works when the tunnel does not); other lines → the core restarts on them. */
-    private fun searchFetch() {
+    /** The subscription fetched again (the link's own route works when the tunnel does not); other lines → the core restarts on
+     *  them. [search]: a search's own call — SearchFetch decides the next by whether the box answered. */
+    private fun searchFetch(search: Boolean = true) {
         if (stopped || !fetching.compareAndSet(false, true)) return
-        lastSearchFetchAt = mono()
+        if (search) synchronized(searchFetches) { searchFetches.started(mono(), policy) }
         scope.launch {
+            var answered = false
             try {
+                val before = AngConfigManager.oursAnsweredAt
                 AngConfigManager.updateConfigViaSubAll()
+                answered = AngConfigManager.oursAnsweredAt != before
                 if (MmkvManager.decodeSettingsBool(AppConfig.PREF_ETHA_LINES_CHANGED, false)) {
                     MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LINES_CHANGED, false)
                     LogUtil.i(AppConfig.TAG, "Auto: the fetch brought other lines; the core restarts on them")
@@ -915,9 +1032,18 @@ class EthaAuto(
             } catch (e: Exception) {
                 LogUtil.w(AppConfig.TAG, "Auto: the fetch while searching failed: ${e.message}")
             } finally {
+                if (search) synchronized(searchFetches) { searchFetches.done(mono(), answered, policy) }
                 fetching.set(false)
             }
         }
+    }
+
+    /** While searching, the lines held are left in the store with the time (3.1.0), fresh at every step: whichever fetch brings
+     *  other lines — the engine's own, the Home screen's, the hourly job's — the engine that starts on them knows which are new
+     *  (start: new connections on the first of them; startNewLocked: they are measured before anything else). Leaving the search
+     *  takes the mark away; one left by a tunnel that was switched off is too old to count a minute later. */
+    private fun markSearching(on: Boolean) {
+        try { MmkvManager.encodeSettings(AppConfig.PREF_ETHA_SEARCH_RESTART, if (on) SearchFetch.mark(System.currentTimeMillis(), labels.values) else "") } catch (_: Exception) {}
     }
 
     /** One quiet fetch after a failover, so the box hears of the dead line soon and the lines are fresh — at most one in ten minutes. */
@@ -925,7 +1051,7 @@ class EthaAuto(
         val now = mono()
         if (now - lastFailoverFetchAt < FAILOVER_FETCH_GAP_MS) return
         lastFailoverFetchAt = now
-        searchFetch()
+        searchFetch(search = false)
     }
 
     private fun saveHealth(force: Boolean = false) {
@@ -955,6 +1081,9 @@ class EthaAuto(
         private const val PULL_FRESH_MS = 60_000L              // a line pulled within this is not pulled again at Connect
         private const val STEADY_WINDOW_MS = 90_000L           // the chip shows the best reading of the line in use within this (2.1.3)
         private const val STEADY_KEPT = 5
+        private const val BACKUPS = 3                          // the failover probes the line in use with this many other lines (3.1.0)
+        private const val SWEEP_TIMEOUT_MS = 3_000L            // every line at once: a line that says nothing in this long is no way out now
+        private const val NEW_LINES_DELAY_MS = 1_000L          // after a restart on the box's new lines: they are measured this soon
 
         /**
          * The lines the selected profile's subscription holds, in its order, with their outbound tags — the members

@@ -10,7 +10,8 @@ package com.v2ray.ang.handler
  * The first pass after Connect and after a network change goes best-known-first at firstPaceSec per step, so the whole
  * picture is in hand within seconds and a pick made on cold numbers is corrected (AutoDecision) without a second burst.
  * A pass ended is the moment of the steady-state decision and of the report to the box. Searching (no line answers) is
- * the fast trickle over every line, retries ignored, until one answers.
+ * every line at once, once per searchSec, retries ignored, until one answers (3.1.0; two lines a step until then: a phone
+ * with eight lines found the one that had come back up to a whole searchSec late).
  *
  *   - [order], [cursor]: the rotation; a line waiting its retry (LineHealth) is skipped.
  *   - [nextProbeAt], [currentDueAt]: the next step, the line in use's probe (only while watched, or forced).
@@ -70,9 +71,9 @@ class AutoSchedule {
      * [watched]: the app asked for the status in the last seconds (the chip is on screen); [due]: whether a line may be
      * probed now (LineHealth). A steady step fires only warm or watched — otherwise the phone sleeps —; the first pass and
      * a network change are forced; traffic returning after the idle gap gets one probe of the line in use. Searching: every
-     * line in turn, two at a time, at its own pace ([searchStep]), freely for SEARCH_GATE_AFTER_MS and then only warm or
-     * watched. In the first pass the line in use is left out (it was probed first); in steady state it is in the rotation
-     * like any line, once per pass.
+     * line at once, at its own pace ([searchStep]), freely for SEARCH_GATE_AFTER_MS and then only warm or watched. In the
+     * first pass the line in use is left out (it was probed first); in steady state it is in the rotation like any line,
+     * once per pass.
      */
     fun action(nowMs: Long, warm: Boolean, watched: Boolean, searching: Boolean, current: String, due: (String) -> Boolean): Action? {
         if (searching) {
@@ -80,8 +81,7 @@ class AutoSchedule {
             if (since != null && nowMs - since > SEARCH_GATE_AFTER_MS && !(warm || watched)) return null
             val n = nextProbeAt ?: return null
             if (nowMs < n) return null
-            val ids = next(2, null) { true }
-            return if (ids.isEmpty()) null else Action.Probe(ids)
+            return if (order.isEmpty()) null else Action.Probe(order.toList())   // 3.1.0: the whole set in one measurement
         }
         val c = currentDueAt
         if (wakeDue && c != null && nowMs >= c) return Action.ProbeCurrent
@@ -140,20 +140,20 @@ class AutoSchedule {
         wakeDue = false
     }
 
-    /** Searching begins: every line in turn, two at a time, the first step now; ends: [reseed]/[start] as the engine decides. */
-    fun searchingBegan(nowMs: Long) {
+    /** Searching begins: every line at once, the first step at [firstAt] — now, or a searchSec on when the engine has just
+     *  measured them all (the sweep that found nothing is what began the search); ends: [reseed]/[start] as the engine decides. */
+    fun searchingBegan(nowMs: Long, firstAt: Long = nowMs) {
         cursor = 0; phase = Phase.STEADY
-        nextProbeAt = nowMs
+        nextProbeAt = firstAt
         currentDueAt = null
         searchingSince = nowMs
     }
 
-    /** Searching: one step taken; the rotation wraps without end, each line once per searchSec (two lines a step), three
-     *  times slower when the box says the network blocks every line ([slow]). */
-    fun searchStep(nowMs: Long, count: Int, policy: AutoPolicy, slow: Boolean = false) {
-        cursor = (cursor + maxOf(1, count)) % maxOf(1, order.size)
-        val steps = maxOf(1, (order.size + 1) / 2)
-        nextProbeAt = nowMs + maxOf(1000L, policy.searchMs / steps) * (if (slow) 3 else 1)
+    /** Searching: one step taken — every line was measured; the next a searchSec on, three times slower when the box says
+     *  the network blocks every line ([slow]). */
+    fun searchStep(nowMs: Long, policy: AutoPolicy, slow: Boolean = false) {
+        cursor = 0
+        nextProbeAt = nowMs + maxOf(1000L, policy.searchMs) * (if (slow) 3 else 1)
     }
 
     /** Wi-Fi ↔ mobile (or the path back after a gap): the trickle restarts in [settleMs] as a quick first pass, in use or

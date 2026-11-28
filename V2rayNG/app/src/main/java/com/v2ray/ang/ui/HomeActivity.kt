@@ -40,6 +40,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.view.LayoutInflater
 import com.v2ray.ang.handler.Exits
+import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.v2ray.ang.handler.AutoSelect
@@ -106,6 +107,7 @@ class HomeActivity : HelperBaseActivity() {
     private var devicesDialog: AlertDialog? = null
     private var devicesShownAt = 0L
     private var updateResult: CheckUpdateResult? = null
+    private var updatePill: View? = null                    // "Update the app" at the start of the toolbar (3.1.0)
     private var pulse: AnimatorSet? = null         // the halo's slow breath while connected
     private var rateOnLatency = false              // the customer just connected by hand: the first time that lands decides the rating ask
 
@@ -129,6 +131,7 @@ class HomeActivity : HelperBaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentViewWithToolbar(binding.root, showHomeAsUp = false, title = getString(R.string.app_name))
+        setupUpdatePill()
         // A line pinned by hand in 1.3.x would have no screen to unpin it now: nobody is pinned in 2.0.0.
         MmkvManager.encodeSettings(AppConfig.PREF_ETHA_PINNED, false)
 
@@ -198,6 +201,7 @@ class HomeActivity : HelperBaseActivity() {
         render()
         intent?.getStringExtra(EXTRA_LINK)?.let { importLink(it) }
         checkForUpdateDaily()
+        showUpdatePill()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -209,6 +213,7 @@ class HomeActivity : HelperBaseActivity() {
     override fun onResume() {
         super.onResume()
         maybeShowUpdate()
+        showUpdatePill()
         refreshSubscription()
         render()
         refreshQuietlyIfStale()
@@ -687,6 +692,7 @@ class HomeActivity : HelperBaseActivity() {
         refreshSubscription()
         render()
         maybeShowUpdate()
+        showUpdatePill()
         if (exitFetchQueued && Exits.want() != null) { exitFetchQueued = false; refreshQuietly() }   // a choice made while a fetch was running: one follow-up that carries it
         exitChosen?.let { chosen -> if (Exits.want() == null) { exitChosen = null; if (Exits.current() != chosen) toastError(R.string.etha_server_notapplied) } }   // the box's word stands
         SubscriptionUpdater.sync(forceReschedule = true)   // the background refresh, timed from this fetch
@@ -847,6 +853,25 @@ class HomeActivity : HelperBaseActivity() {
             .show()
     }
 
+    /** "Update the app" (3.1.0, the operator's design): a small frosted button at the start of the toolbar, in the app name's
+     *  place, shown while the store this build came from carries a newer version — the box's word in its last answer
+     *  (X-Etha-App-Latest), or the direct build's own daily check. One tap goes where every update goes (Updates.open). */
+    private fun setupUpdatePill() {
+        val toolbar = findViewById<MaterialToolbar>(R.id.toolbar) ?: return
+        val pill = layoutInflater.inflate(R.layout.view_update_pill, toolbar, false)
+        pill.setOnClickListener { Updates.open(this) }
+        toolbar.addView(pill)
+        updatePill = pill
+    }
+
+    private fun showUpdatePill() {
+        val pill = updatePill ?: return
+        val show = Exits.updateAvailable() || updateResult?.hasUpdate == true
+        if (pill.isVisible == show) return
+        pill.isVisible = show
+        supportActionBar?.setDisplayShowTitleEnabled(!show)
+    }
+
     // ---------------------------------------------------------------- the rating ask
 
     /**
@@ -880,6 +905,7 @@ class HomeActivity : HelperBaseActivity() {
                 MmkvManager.encodeSettings(AppConfig.PREF_ETHA_LAST_UPDATE_CHECK, System.currentTimeMillis())
                 if (result.hasUpdate) {
                     updateResult = result
+                    showUpdatePill()
                     binding.tvUpdate.isVisible = true
                     binding.tvUpdate.text = if (result.mandatory) {
                         getString(R.string.etha_update_required)
@@ -897,6 +923,8 @@ class HomeActivity : HelperBaseActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_home, menu)
+        // 3.1.0: the action is a view of its own (the menu button, a frosted square): its tap is the item's
+        menu.findItem(R.id.etha_settings)?.let { item -> item.actionView?.setOnClickListener { onOptionsItemSelected(item) } }
         return true
     }
 

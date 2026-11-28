@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the Home toolbar's one action (3.1.0): a menu button in the settings icon's place; it opens the same Settings -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:paddingStart="4dp"
+    android:paddingEnd="12dp">
+
+    <ImageView
+        android:id="@+id/btn_menu"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@drawable/bg_menu_button"
+        android:contentDescription="@string/title_settings"
+        android:scaleType="center"
+        android:src="@drawable/ic_menu_lines_22dp" />
+</FrameLayout>

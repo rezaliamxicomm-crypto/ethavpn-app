@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the menu button (3.1.0): a frosted square, 40 dp -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#33FFFFFF">
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="12dp" />
+            <solid android:color="#14FFFFFF" />
+            <stroke android:width="1dp" android:color="#24FFFFFF" />
+        </shape>
+    </item>
+</ripple>

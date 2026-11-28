@@ -155,6 +155,7 @@ object AppConfig {
     const val ETHA_EXIT_HEADER = "x-etha-exit"              // the box's word of this phone's choice ("" = Auto)
     const val ETHA_EXIT_SET_HEADER = "X-Etha-Exit-Set"      // this phone's choice, on the next fetch (a code, or "auto"); the box renames the phone's user
     const val ETHA_APP_MIN_HEADER = "x-etha-app-min"        // android=3.0.0;ios=3.0.0: below it the update screen
+    const val ETHA_APP_LATEST_HEADER = "x-etha-app-latest"  // android=3.1.0;ios=3.1.0;play=3.1.0 (3.1.0): above this build → the Update button
     const val ETHA_MODEL_HEADER = "X-Etha-Model"            // the phone's model and OS version, for the operator's device card (never an id)
     const val ETHA_OS_HEADER = "X-Etha-OS"
     const val ETHA_PROBE_BOX_IP = "203.0.113.3"              // the box itself in the sheet's probes (an exit's is its own address, routed to its card)
@@ -235,6 +236,8 @@ object AppConfig {
     const val PREF_ETHA_EXIT_WANT = "pref_etha_exit_want"       // a choice the box has not confirmed yet ("auto" for none)
     const val PREF_ETHA_EXIT_MS = "pref_etha_exit_ms"           // code=ms,… the countries' last measured latencies (greyed before connecting)
     const val PREF_ETHA_APP_MIN = "pref_etha_app_min"           // the last X-Etha-App-Min
+    const val PREF_ETHA_APP_LATEST = "pref_etha_app_latest"     // the last X-Etha-App-Latest (3.1.0): the newest version each store carries
+    const val PREF_ETHA_SEARCH_RESTART = "pref_etha_search_restart"   // "<wall ms>|label,…" left by a search's fetch that brought other lines (3.1.0): the next engine measures the new ones first
     const val PREF_ETHA_DEVICES = "pref_etha_devices"           // the last device-limit refusal: limit,active,when
     // The rating ask (handler/RatePrompt): the phone's, not the account's — "Delete account" leaves them
     const val PREF_ETHA_RATE_CONNECTS = "pref_etha_rate_connects"            // connections that worked, made by hand

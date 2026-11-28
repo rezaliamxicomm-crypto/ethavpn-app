@@ -501,8 +501,8 @@
     <string name="etha_expired">Истекла. Продлите, чтобы продолжить.</string>
     <string name="etha_data_used">Использовано %1$s из %2$s</string>
     <string name="etha_data_unlimited">Безлимитный трафик</string>
-    <string name="etha_data_unknown">Трафик: неизвестно до обновления</string>
-    <string name="etha_refresh">Обновить</string>
+    <string name="etha_data_unknown">Трафик: неизвестно до следующего получения</string>
+    <string name="etha_refresh">Получить заново</string>
     <string name="etha_renew">Продлить</string>
     <string name="etha_support">Поддержка</string>
     <string name="etha_advanced">Дополнительно (серверы, настройки)</string>
@@ -548,8 +548,8 @@
     <string name="etha_fastest">Самые быстрые</string>
     <string name="etha_auto_now">Сейчас %s</string>
     <string name="etha_auto_hint">Самая быстрая линия выбирается автоматически</string>
-    <string name="etha_updated">Обновлено %s</string>
-    <string name="etha_updated_never">Ещё не обновлялось</string>
+    <string name="etha_updated">Получено %s</string>
+    <string name="etha_updated_never">Ещё не получено</string>
     <string name="etha_privacy_policy">Политика конфиденциальности</string>
     <string name="etha_delete_account">Удалить аккаунт</string>
     <string name="etha_delete_account_hint">Удаляет подписку и все её данные с этого телефона</string>
@@ -573,10 +573,10 @@
     <string name="etha_state_searching">Поиск линии…</string>
     <string name="etha_state_expired">Подписка истекла</string>
     <string name="etha_expired_short">Истекла</string>
-    <string name="etha_expired_hint">Истекла. Продлите в боте, затем нажмите «Обновить».</string>
+    <string name="etha_expired_hint">Истекла. Продлите в боте, затем нажмите «Получить заново».</string>
     <string name="etha_no_answer_yet">Пока нет ответа</string>
     <string name="etha_no_line_answers">Ни одна линия не отвечает</string>
-    <string name="etha_searching_hint">Нажмите «Обновить». Не помогло? Нажмите «Поддержка».</string>
+    <string name="etha_searching_hint">Нажмите «Получить заново». Не помогло? Нажмите «Поддержка».</string>
     <string name="etha_lines_blocked">Линии в этой сети сейчас блокируются. Мы работаем над этим.</string>
     <string name="etha_switched_faster">Переключено на более быструю линию</string>
     <string name="etha_on_fastest">Вы на самой быстрой линии</string>
@@ -601,4 +601,5 @@
     <string name="etha_update_title">Обновите SkyRay</string>
     <string name="etha_update_text">Эта версия больше не работает с сервисом. Обновите, чтобы подключаться дальше.</string>
     <string name="etha_update_now">Обновить</string>
+    <string name="etha_update_app">Обновить приложение</string>
 </resources>

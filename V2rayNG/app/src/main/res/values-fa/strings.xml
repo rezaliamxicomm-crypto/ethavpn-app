@@ -480,8 +480,8 @@
     <string name="etha_expired">منقضی شده. برای ادامه تمدید کنید.</string>
     <string name="etha_data_used">%1$s از %2$s مصرف شده</string>
     <string name="etha_data_unlimited">حجم نامحدود</string>
-    <string name="etha_data_unknown">حجم: تا بروزرسانی بعدی نامشخص</string>
-    <string name="etha_refresh">بروزرسانی</string>
+    <string name="etha_data_unknown">حجم: تا دریافت بعدی نامشخص</string>
+    <string name="etha_refresh">دریافت دوباره</string>
     <string name="etha_renew">تمدید</string>
     <string name="etha_support">پشتیبانی</string>
     <string name="etha_advanced">پیشرفته (سرورها، تنظیمات)</string>
@@ -527,8 +527,8 @@
     <string name="etha_fastest">سریع‌ترین‌ها</string>
     <string name="etha_auto_now">اکنون %s</string>
     <string name="etha_auto_hint">سریع‌ترین خط خودکار انتخاب می‌شود</string>
-    <string name="etha_updated">بروزرسانی %s</string>
-    <string name="etha_updated_never">هنوز بروزرسانی نشده</string>
+    <string name="etha_updated">آخرین دریافت %s</string>
+    <string name="etha_updated_never">هنوز دریافت نشده</string>
     <string name="etha_privacy_policy">حریم خصوصی</string>
     <string name="etha_delete_account">حذف حساب</string>
     <string name="etha_delete_account_hint">اشتراک و همه‌ی اطلاعات آن از این گوشی پاک می‌شود</string>
@@ -552,10 +552,10 @@
     <string name="etha_state_searching">در جستجوی خط…</string>
     <string name="etha_state_expired">اشتراک تمام شده</string>
     <string name="etha_expired_short">منقضی</string>
-    <string name="etha_expired_hint">منقضی شده. در ربات تمدید کنید و سپس «بروزرسانی» را بزنید.</string>
+    <string name="etha_expired_hint">منقضی شده. در ربات تمدید کنید و سپس «دریافت دوباره» را بزنید.</string>
     <string name="etha_no_answer_yet">هنوز جوابی نیامده</string>
     <string name="etha_no_line_answers">هیچ خطی جواب نمی‌دهد</string>
-    <string name="etha_searching_hint">«بروزرسانی» را بزنید. باز هم نشد؟ «پشتیبانی» را بزنید.</string>
+    <string name="etha_searching_hint">«دریافت دوباره» را بزنید. باز هم نشد؟ «پشتیبانی» را بزنید.</string>
     <string name="etha_lines_blocked">خطوط روی این شبکه فعلاً مسدود شده‌اند. در حال رفع آن هستیم.</string>
     <string name="etha_switched_faster">به خط سریع‌تری رفت</string>
     <string name="etha_on_fastest">روی سریع‌ترین خط هستید</string>
@@ -580,4 +580,5 @@
     <string name="etha_update_title">به‌روزرسانی اسکای‌ری</string>
     <string name="etha_update_text">این نسخه دیگر با سرویس کار نمی‌کند. برای ادامه‌ی اتصال به‌روزرسانی کنید.</string>
     <string name="etha_update_now">به‌روزرسانی</string>
+    <string name="etha_update_app">به‌روزرسانی برنامه</string>
 </resources>

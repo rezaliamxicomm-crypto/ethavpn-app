@@ -86,6 +86,7 @@ object Exits {
         val w = want()
         if (w != null && settled(w, mine, carried)) MmkvManager.encodeSettings(AppConfig.PREF_ETHA_EXIT_WANT, "")
         MmkvManager.encodeSettings(AppConfig.PREF_ETHA_APP_MIN, headers[AppConfig.ETHA_APP_MIN_HEADER]?.trim().orEmpty())
+        MmkvManager.encodeSettings(AppConfig.PREF_ETHA_APP_LATEST, headers[AppConfig.ETHA_APP_LATEST_HEADER]?.trim().orEmpty())   // 3.1.0: the Update button
     }
 
     /** Pure: the box's word of this phone's country changed between two answers ("" = Auto): open connections are on the old country. */
@@ -108,6 +109,18 @@ object Exits {
         val all = measured().toMutableMap(); all.putAll(fresh)
         MmkvManager.encodeSettings(AppConfig.PREF_ETHA_EXIT_MS, all.entries.joinToString(",") { "${it.key}=${it.value}" })
     }
+
+    /** Pure (3.1.0): the newest version the store this build came from carries, from X-Etha-App-Latest
+     *  (`android=3.1.0;ios=3.1.0;play=3.1.0`: the direct file, the App Store, Google Play) — null when the header does not name it. */
+    fun latestFor(raw: String?, play: Boolean): String? = minVersion(raw, if (play) "play" else "android")
+
+    /** Pure: the Update button is due — the store's newest version, or failing that the lowest version the service takes, is above [version]. */
+    fun updateOffered(version: String, latest: String?, min: String?, play: Boolean): Boolean =
+        (latestFor(latest, play)?.let { isBelow(version, it) } ?: false) || (minVersion(min)?.let { isBelow(version, it) } ?: false)
+
+    /** The Update button (3.1.0): the store this build came from carries a newer version, as the box's last answer said. */
+    fun updateAvailable(): Boolean = updateOffered(BuildConfig.VERSION_NAME, MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_APP_LATEST),
+        MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_APP_MIN), BuildConfig.DISTRIBUTION == "Play")
 
     /** The update screen is due: the box's lowest Android version is above this build (X-Etha-App-Min). */
     fun updateDue(): Boolean = minVersion(MmkvManager.decodeSettingsString(AppConfig.PREF_ETHA_APP_MIN))?.let { isBelow(BuildConfig.VERSION_NAME, it) } ?: false

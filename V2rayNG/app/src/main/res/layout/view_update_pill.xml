@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Update the app" (3.1.0): shown at the start of the Home toolbar, in the title's place, while the store this build came
+     from carries a newer version (X-Etha-App-Latest, or the direct build's own check). One tap: the store. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/update_pill"
+    android:layout_width="wrap_content"
+    android:layout_height="32dp"
+    android:layout_gravity="start|center_vertical"
+    android:background="@drawable/bg_update_pill"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="6dp"
+    android:paddingEnd="14dp"
+    android:visibility="gone">
+
+    <ImageView
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:background="@drawable/bg_update_badge"
+        android:importantForAccessibility="no"
+        android:padding="4dp"
+        android:src="@drawable/ic_update_arrow_12dp" />
+
+    <TextView
+        android:id="@+id/update_pill_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:fontFamily="@font/vazirmatn"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:text="@string/etha_update_app"
+        android:textColor="@android:color/white"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+</LinearLayout>

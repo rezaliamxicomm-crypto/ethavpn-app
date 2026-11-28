@@ -62,6 +62,19 @@ class ExitsTest {
     }
 
     @Test
+    fun theUpdateButtonReadsTheStoreThisBuildCameFrom() {
+        val h = "android=3.1.0;ios=3.1.1;play=3.0.4"                                  // X-Etha-App-Latest: the direct file, the App Store, Google Play
+        assertEquals("3.1.0", Exits.latestFor(h, play = false)); assertEquals("3.0.4", Exits.latestFor(h, play = true))
+        assertNull(Exits.latestFor("ios=3.1.0", play = false)); assertNull(Exits.latestFor(null, play = true)); assertNull(Exits.latestFor("play=abc", play = true))
+        assertEquals(true, Exits.updateOffered("3.0.4", h, null, play = false))        // the direct file is newer
+        assertEquals(false, Exits.updateOffered("3.0.4", h, null, play = true))        // Google Play still carries this one: no button to a store with nothing new
+        assertEquals(false, Exits.updateOffered("3.1.0", h, null, play = false)); assertEquals(false, Exits.updateOffered("3.2.0", h, null, play = false))
+        assertEquals(false, Exits.updateOffered("3.0.4", null, null, play = true)); assertEquals(false, Exits.updateOffered("3.0.4", "", "", play = false))
+        assertEquals(true, Exits.updateOffered("3.0.4", null, "android=3.1.0;ios=3.1.0", play = true))   // the service's lowest version is above this build: the button is there too
+        assertEquals(false, Exits.updateOffered("3.1.0", "", "android=3.1.0;ios=3.1.0", play = false))
+    }
+
+    @Test
     fun theParserTakesOddItems() {
         val l = Exits.parse("de|Germany|DE|OK|x|203.0.113.3;us|United States|US|ok|90|203.0.113.21;")
         assertEquals(listOf("de", "us"), l.map { it.code }); assertEquals("ok", l[0].state); assertEquals(0, l[0].rtt); assertEquals(false, l[0].routed); assertEquals(true, l[1].routed)

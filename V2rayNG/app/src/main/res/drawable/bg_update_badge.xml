@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the Update button's badge: a blue disc, light at the top left -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <gradient android:angle="315" android:startColor="#8CC0FF" android:endColor="#3B82F6" />
+</shape>

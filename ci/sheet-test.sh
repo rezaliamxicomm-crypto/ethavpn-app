@@ -29,7 +29,8 @@ TEST=$(ls V2rayNG/app/build/outputs/apk/androidTest/direct/debug/*.apk | head -1
   adb install -r -t "$APK"
   adb install -r -t "$TEST"
 } >> "$OUT/0-device.txt" 2>&1
-adb shell am instrument -w -e class com.v2ray.ang.ServersSheetTest "$PKG.test/androidx.test.runner.AndroidJUnitRunner" > "$OUT/1-instrument.txt" 2>&1
+# both classes in one run (3.1.0: the Home screen — the Update button, the menu button, Refetch — beside the Servers sheet)
+adb shell am instrument -w -e class com.v2ray.ang.ServersSheetTest,com.v2ray.ang.HomeScreenTest "$PKG.test/androidx.test.runner.AndroidJUnitRunner" > "$OUT/1-instrument.txt" 2>&1
 cat "$OUT/0-device.txt" "$OUT/1-instrument.txt"
 # what the test wrote, out of the app's own storage (a debug build: run-as)
 for f in $(adb shell run-as "$PKG" ls files/sheet-test 2>/dev/null | tr -d '\r'); do

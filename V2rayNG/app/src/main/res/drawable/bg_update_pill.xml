@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the Update button (3.1.0, the operator's design 1): a frosted capsule, 32 dp high -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#33FFFFFF">
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="16dp" />
+            <solid android:color="#14FFFFFF" />
+            <stroke android:width="1dp" android:color="#24FFFFFF" />
+        </shape>
+    </item>
+</ripple>

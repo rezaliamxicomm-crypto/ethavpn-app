@@ -112,19 +112,25 @@ class AutoScheduleTest {
     }
 
     @Test
-    fun searchingIsTheFastTrickleOverEveryLineRetriesIgnored() {
+    fun searchingMeasuresEveryLineAtOnceOncePerSearchSecRetriesIgnored() {
+        val abc = AutoSchedule.Action.Probe(listOf("a", "b", "c"))
         val sch = AutoSchedule(); sch.reseed(0, listOf("a", "b", "c"), p, 0.5)
         sch.searchingBegan(s(50.0))
-        assertEquals(AutoSchedule.Action.Probe(listOf("a", "b")), sch.action(s(50.0), warm = false, watched = false, searching = true, current = "a") { false })   // every line, the line in use too, two at a time
-        sch.searchStep(s(50.0), 2, p)
-        assertNull(sch.action(s(79.0), warm = false, watched = false, searching = true, current = "a", due = all))                   // paced: 3 lines, two a step → a step every 30 s, each line once a minute
-        assertEquals(AutoSchedule.Action.Probe(listOf("c")), sch.action(s(80.0), warm = false, watched = false, searching = true, current = "a", due = all))   // to the end of the rotation…
-        sch.searchStep(s(80.0), 1, p, slow = true)                                                                                  // the box says the network blocks every line: three times slower
-        assertNull(sch.action(s(169.0), warm = false, watched = false, searching = true, current = "a", due = all))
-        assertEquals(AutoSchedule.Action.Probe(listOf("a", "b")), sch.action(s(170.0), warm = false, watched = false, searching = true, current = "a", due = all))   // …then round again
-        sch.searchStep(s(170.0), 2, p)
+        assertEquals(abc, sch.action(s(50.0), warm = false, watched = false, searching = true, current = "a") { false })   // every line in one measurement, the line in use too, a line waiting its retry too (3.1.0; two a step until then)
+        sch.searchStep(s(50.0), p)
+        assertNull(sch.action(s(109.0), warm = false, watched = false, searching = true, current = "a", due = all))                  // each line once per searchSec (60)
+        assertEquals(abc, sch.action(s(110.0), warm = false, watched = false, searching = true, current = "a", due = all))
+        sch.searchStep(s(110.0), p, slow = true)                                                                                    // the box says the network blocks every line: three times slower
+        assertNull(sch.action(s(289.0), warm = false, watched = false, searching = true, current = "a", due = all))
+        assertEquals(abc, sch.action(s(290.0), warm = false, watched = false, searching = true, current = "a", due = all))
+        sch.searchStep(s(290.0), p)
         assertNull(sch.action(s(700.0), warm = false, watched = false, searching = true, current = "a", due = all))                  // ten minutes in: only warm or watched
-        assertEquals(AutoSchedule.Action.Probe(listOf("c")), sch.action(s(700.0), warm = true, watched = false, searching = true, current = "a", due = all))
+        assertEquals(abc, sch.action(s(700.0), warm = true, watched = false, searching = true, current = "a", due = all))
+        // a search that begins with a measurement of every line just made (the sweep found nothing): the next look a searchSec on
+        val t = AutoSchedule(); t.reseed(0, listOf("a", "b"), p, 0.5)
+        t.searchingBegan(s(10.0), s(10.0) + p.searchMs)
+        assertNull(t.action(s(69.0), warm = false, watched = false, searching = true, current = "a", due = all))
+        assertEquals(AutoSchedule.Action.Probe(listOf("a", "b")), t.action(s(70.0), warm = false, watched = false, searching = true, current = "a", due = all))
     }
 
     @Test
