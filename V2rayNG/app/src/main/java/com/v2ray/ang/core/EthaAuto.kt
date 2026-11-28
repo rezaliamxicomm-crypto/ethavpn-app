@@ -713,9 +713,12 @@ class EthaAuto(
         if (which.isEmpty()) return
         searchSteps += 1
         val scout = schedule.fallback && searchSteps % 10 == 0
-        // on the box's target, every fourth step asks the fallback instead (3.1.0): a search that holds must find out by itself that
-        // it is the target that is down, not the lines — until the hold a search ended at its first step and the next failover asked
-        val other = !schedule.fallback && searchSteps % FALLBACK_STEP_EVERY == 0
+        // on the box's target, one step in every (lines / 2 + 1) asks the fallback instead (3.1.0): a search that holds must find
+        // out by itself that it is the target that is down, not the lines — until the hold a search ended at its first step and the
+        // next failover asked. That interval is about one round of the rotation (two lines a step) and never divides it evenly, so
+        // the fallback step moves through the rotation and every line gets it in turn (every fourth step always met the same pair
+        // of eight lines)
+        val other = !schedule.fallback && searchSteps % (lines.size / 2 + 1) == 0
         val url = if ((schedule.fallback && !scout) || other) AppConfig.ETHA_PROBE_FALLBACK_URL else AppConfig.ETHA_PROBE_URL
         val out = measureOnce(which, which.size, url, policy.probeTimeoutMs)
         if (scout) {
@@ -1249,7 +1252,6 @@ class EthaAuto(
         private const val BACKUPS = 3                          // the failover probes the line in use with this many other lines (3.1.0)
         private const val SWEEP_TIMEOUT_MS = 3_000L            // every line at once: a line that says nothing in this long is no way out now
         private const val MAX_AT_ONCE = 16                     // …and never more lines than this in one measurement
-        private const val FALLBACK_STEP_EVERY = 4              // a search on the box's target asks the fallback at every such step
         private const val PULL_FAILED_FOR_MS = 60_000L         // a line whose pull failed is not believed by its HEAD for this long
 
         // Process-wide, not the engine's: an engine lives from one start of the core to the next, and a fetch that brings other
