@@ -1,0 +1,12 @@
+20 countries and Auto = 21 rows; Android API 29; screen 1080 x 1920 px at density 3.0 (360 x 640 dp); Configuration.screenHeightDp 568; status bar 72 px, navigation bar 144 px
+as opened:
+   sheet [0,0][1080,1776] (state 3; 592 dp high), title top 156
+   list [60,276][1020,1548]: 1272 px (424 dp) shown of 4158 px (1386 dp) of rows; 21 rows of 168 px
+   first row [60,276][1020,444], seen 960 x 168; last row [60,4236][1020,4404], seen 0 x 0
+   button [60,1554][1020,1704]: 960 x 150 px, seen 960 x 150 px; the navigation bar begins at 1776
+at the end of the list:
+   sheet [0,0][1080,1776] (state 3; 592 dp high), title top 156
+   list [60,276][1020,1548]: 1272 px (424 dp) shown of 4158 px (1386 dp) of rows; 21 rows of 168 px
+   first row [60,-2610][1020,-2442], seen 0 x 0; last row [60,1350][1020,1518], seen 960 x 168
+   button [60,1554][1020,1704]: 960 x 150 px, seen 960 x 150 px; the navigation bar begins at 1776
+RESULT: a country can be chosen
