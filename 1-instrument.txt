@@ -1,0 +1,80 @@
+
+com.v2ray.ang.ServersSheetTest:...
+com.v2ray.ang.HomeScreenTest:
+Error in englishWithAnUpdate(com.v2ray.ang.HomeScreenTest):
+java.lang.AssertionError: the stamp says 'Not fetched yet', not 'Refetched …'
+Renew is not shown
+Support is not shown
+Test latency is not shown
+the Server box is not shown
+the menu button takes no tap
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at com.v2ray.ang.HomeScreenTest.look(HomeScreenTest.kt:162)
+	at com.v2ray.ang.HomeScreenTest.englishWithAnUpdate(HomeScreenTest.kt:166)
+
+Error in englishUpToDate(com.v2ray.ang.HomeScreenTest):
+java.lang.AssertionError: the stamp says 'Not fetched yet', not 'Refetched …'
+Renew is not shown
+Support is not shown
+Test latency is not shown
+the Server box is not shown
+the menu button takes no tap
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at com.v2ray.ang.HomeScreenTest.look(HomeScreenTest.kt:162)
+	at com.v2ray.ang.HomeScreenTest.englishUpToDate(HomeScreenTest.kt:169)
+
+Error in farsiWithAnUpdate(com.v2ray.ang.HomeScreenTest):
+java.lang.AssertionError: the stamp says 'هنوز دریافت نشده', not 'آخرین دریافت …'
+Renew is not shown
+Support is not shown
+Test latency is not shown
+the Server box is not shown
+the menu button takes no tap
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at com.v2ray.ang.HomeScreenTest.look(HomeScreenTest.kt:162)
+	at com.v2ray.ang.HomeScreenTest.farsiWithAnUpdate(HomeScreenTest.kt:172)
+
+
+Time: ۳۳٫۲۷۱
+There were 3 failures:
+1) englishWithAnUpdate(com.v2ray.ang.HomeScreenTest)
+java.lang.AssertionError: the stamp says 'Not fetched yet', not 'Refetched …'
+Renew is not shown
+Support is not shown
+Test latency is not shown
+the Server box is not shown
+the menu button takes no tap
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at com.v2ray.ang.HomeScreenTest.look(HomeScreenTest.kt:162)
+	at com.v2ray.ang.HomeScreenTest.englishWithAnUpdate(HomeScreenTest.kt:166)
+2) englishUpToDate(com.v2ray.ang.HomeScreenTest)
+java.lang.AssertionError: the stamp says 'Not fetched yet', not 'Refetched …'
+Renew is not shown
+Support is not shown
+Test latency is not shown
+the Server box is not shown
+the menu button takes no tap
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at com.v2ray.ang.HomeScreenTest.look(HomeScreenTest.kt:162)
+	at com.v2ray.ang.HomeScreenTest.englishUpToDate(HomeScreenTest.kt:169)
+3) farsiWithAnUpdate(com.v2ray.ang.HomeScreenTest)
+java.lang.AssertionError: the stamp says 'هنوز دریافت نشده', not 'آخرین دریافت …'
+Renew is not shown
+Support is not shown
+Test latency is not shown
+the Server box is not shown
+the menu button takes no tap
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at com.v2ray.ang.HomeScreenTest.look(HomeScreenTest.kt:162)
+	at com.v2ray.ang.HomeScreenTest.farsiWithAnUpdate(HomeScreenTest.kt:172)
+
+FAILURES!!!
+Tests run: 6,  Failures: 3
+
+

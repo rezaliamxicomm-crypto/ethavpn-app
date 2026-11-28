@@ -1,0 +1,11 @@
+Home in 'en' (left to right), the store's newest version: 'not said'; Android API 36, density 2.8125
+   toolbar [0,125][1080,305] (64 dp high); the app's name shown: 'SkyRay'
+   menu button [933,158][1046,271]: 40 x 40 dp, 12 dp from the far edge
+   the fetch button says 'Refetch', the stamp 'Not fetched yet'
+RESULT: FAILED
+   the stamp says 'Not fetched yet', not 'Refetched …'
+   Renew is not shown
+   Support is not shown
+   Test latency is not shown
+   the Server box is not shown
+   the menu button takes no tap
