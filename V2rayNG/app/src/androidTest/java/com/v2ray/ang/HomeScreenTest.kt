@@ -153,6 +153,30 @@ class HomeScreenTest {
                     }
                 }
                 shot(tag)
+                // the account card's two buttons: on a short screen they are below the edge and the page scrolls to them, as it did
+                // before 3.1.0 (nothing under the toolbar was changed) — brought into view, held to being whole, and photographed
+                scenario.onActivity { a ->
+                    var v: View? = a.findViewById(R.id.btn_renew)
+                    while (v != null && v !is android.widget.ScrollView) v = v.parent as? View
+                    (v as? android.widget.ScrollView)?.fullScroll(View.FOCUS_DOWN)
+                }
+                SystemClock.sleep(800)
+                inst.waitForIdleSync()
+                scenario.onActivity { a ->
+                    val bars = androidx.core.view.ViewCompat.getRootWindowInsets(a.window.decorView)?.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                    val dm = android.util.DisplayMetrics()
+                    @Suppress("DEPRECATION")
+                    a.windowManager.defaultDisplay.getRealMetrics(dm)
+                    val floor = dm.heightPixels - (bars?.bottom ?: 0)
+                    for ((what, id) in listOf("Renew" to R.id.btn_renew, "Support" to R.id.btn_support)) {
+                        val b = a.findViewById<View>(id) ?: continue
+                        val r = onScreen(b); val s = seen(b)
+                        text.add("   scrolled to the end: $what ${r.toShortString()}, seen ${s.width()} x ${s.height()} of ${r.width()} x ${r.height()} px; the navigation bar begins at $floor")
+                        if (s.width() != r.width() || s.height() != r.height()) problems.add("scrolled to the end, $what is still cut off")
+                        if (r.bottom > floor) problems.add("scrolled to the end, $what reaches ${r.bottom - floor} px under the navigation bar")
+                    }
+                }
+                shot("$tag-2-end")
                 // the menu button opens Settings, as the icon it replaced did: the tap is taken by the action's own view, which holds the button
                 scenario.onActivity { a ->
                     val holder = a.findViewById<View>(R.id.btn_menu)?.parent as? View
