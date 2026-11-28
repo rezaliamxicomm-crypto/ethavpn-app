@@ -1,0 +1,9 @@
+Home in 'en' (left to right), the store's newest version: 'not said'; Android API 36, density 2.8125
+   toolbar [0,125][1080,305] (64 dp high); the app's name shown: 'SkyRay'
+   menu button [933,158][1046,271]: 40 x 40 dp, 12 dp from the far edge
+   the fetch button says 'Refetch', the stamp 'Refetched 5 minutes ago'
+   Renew [56,2175][526,2316]
+   Support [554,2175][1024,2316]
+   Test latency [90,1480][526,1609]
+   the Server box [90,1272][990,1441]
+RESULT: Home is as designed
